@@ -1,4 +1,4 @@
-title:
+title: khjzzm.github.io
 description: 노력과인내가필요.
 author: hyunjin kim
 email: khjzzm@gmail.com
@@ -11,7 +11,7 @@ remote_theme: riggraz/no-style-please
 theme_config:
   appearance: "auto" # can be "light", "dark" or "auto"
   back_home_text: "이전"
-  date_format: "Y-%m-%d"
+  date_format: "%Y-%m-%d"
   show_description: true
 
 sass:
