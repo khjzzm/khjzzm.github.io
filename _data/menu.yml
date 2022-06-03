@@ -2,37 +2,33 @@
 # https://github.com/riggraz/no-style-please#customize-the-menu
 
 entries:
-  - title: info
-    entries:
-      - title: a (nearly) no-CSS, fast, minimalist Jekyll theme.
-      - title: github repo
-        url: https://github.com/riggraz/no-style-please
-      - title: "used by <a href='https://riggraz.dev'>riggraz.dev</a> and <a href='https://github.com/riggraz/no-style-please/network/dependents'>many others</a>"
-
   - title: all posts
     post_list:
       limit: 5
       show_more: true
-      show_more_text: See archive...
+      show_more_text: See all posts...
       show_more_url: archive.html
 
-  - title: posts by category
+  - title: book
     post_list:
-      category: example2
+      category: book
+      limit: 3
       show_more: true
-      show_more_text: See more posts...
-      show_more_url: example2-archive.html
+      show_more_text: See more book...
+      show_more_url: book-archive.html
 
-  - title: rss
-    url: feed.xml
-  
-  - title: another list
+  - title: corssfit
+    post_list:
+      category: crossfit
+      limit: 3
+      show_more: true
+      show_more_text: See more crossfit...
+      show_more_url: crossfit-archive.html
+
+  - title: info
     entries:
-      - title: with subitems
-        entries:
-          - title: with subsubitems
-          - title: example page
-            url: about
-  - title: PRO TIP
-    entries:
-      - title: to edit this menu, edit _data/menu.yml file
+      - title: github repo
+        url: https://github.com/khjzzm
+      - title: resume
+        url: https://khjzzm.github.io/resume/
+      - title: "<a href='https://www.dallalive.com/'>달라</a> and <a href='https://live.club5678.com/'>클럽라이브</a>"
