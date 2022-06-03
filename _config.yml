@@ -1,21 +1,18 @@
-title: kimhynjin
+title:
+description: 노력과인내가필요.
 author: hyunjin kim
-email: khjzzm@gmail.com 
+email: khjzzm@gmail.com
 url: https://khjzzm.github.io/
 baseurl: "/"
-description: hyunjin Dev Blog.
-permalink: /:slug.html
-favicon: "logo.png" 
+permalink: /:slug
+favicon: "logo.png"
 
-# if you are using GitHub Pages, change it to remote_theme: riggraz/no-style-please
-#theme: no-style-please
 remote_theme: riggraz/no-style-please
-
 theme_config:
   appearance: "auto" # can be "light", "dark" or "auto"
-  back_home_text: "이전" # customize text for homepage link in post layout
-  date_format: "%Y-%m-%d" # customize how date is formatted
-  show_description: false # show blog description in home page
+  back_home_text: "이전"
+  date_format: "Y-%m-%d"
+  show_description: true
 
 sass:
   style: :compressed
