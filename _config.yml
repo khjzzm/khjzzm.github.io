@@ -4,7 +4,7 @@ author: hyunjin kim
 email: khjzzm@gmail.com
 url: https://khjzzm.github.io/
 baseurl: "/"
-permalink: /:slug
+permalink: /:year/:month/:slug # /:categories/:year/:month/:day/:title:output_ext
 favicon: "logo.png"
 
 remote_theme: riggraz/no-style-please

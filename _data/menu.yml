@@ -1,6 +1,3 @@
-# For documentation on this file, see:
-# https://github.com/riggraz/no-style-please#customize-the-menu
-
 entries:
   - title: all posts
     post_list:
@@ -37,6 +34,5 @@ entries:
     entries:
       - title: github repo
         url: https://github.com/khjzzm
-      - title: resume
-        url: https://khjzzm.github.io/resume/
-      - title: "<a href='https://www.dallalive.com/'>달라</a> and <a href='https://live.club5678.com/'>클럽라이브</a>"
+      - title: "<a href='https://khjzzm.github.io/resume' target='_blank'>resume<a/>"
+      - title: "<a href='mailto:khjzzm@gmail.com?subject=제목&body=내용'>mail</a>"

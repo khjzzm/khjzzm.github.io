@@ -1,5 +1,6 @@
 ---
 layout: post
+title: 파이널컷 단축키
 ---
 
 1. Cmd + N 프로젝트 만들기 (Create New Project)
