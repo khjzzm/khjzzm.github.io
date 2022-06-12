@@ -1,6 +1,6 @@
 ---
 layout: post
-title: javascript TOP3 배열 메서드
+title: 자바스크립트 TOP3 배열 메서드
 ---
 
 ## .find()
