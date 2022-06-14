@@ -30,9 +30,9 @@ entries:
       show_more_text: See more crossfit...
       show_more_url: crossfit-archive.html
 
-  - title: info
-    entries:
-      - title: github repo
-        url: https://github.com/khjzzm
-      - title: "<a href='https://khjzzm.github.io/resume' target='_blank'>resume<a/>"
-      - title: "<a href='mailto:khjzzm@gmail.com?subject=제목&body=내용'>mail</a>"
+  - title: bookmark
+    url: bookmark
+
+  - title: "<a href='https://github.com/khjzzm' target='_blank'>github repo<a/>"
+  - title: "<a href='https://khjzzm.github.io/resume' target='_blank'>resume<a/>"
+  - title: "<a href='mailto:khjzzm@gmail.com?subject=제목&body=내용'>mail</a>"
