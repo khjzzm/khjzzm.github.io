@@ -4,10 +4,10 @@ title: required a single bean 빈 중복
 ---
 
 스프링 컨테이너가 객체 의존성을 주입 할때 해당 타입의 빈이 여러개 인경우 아래와 같은 에러 메시지가 나온다.   
-> Parameter 0 of constructor in ** required a single bean, but 3 were found:
+__Parameter 0 of constructor in package required a single bean, but 3 were found__
 
-위와 같이 같은 타입의 빈이 여러개인 경우 오류와 함께 해결을 위한 방법으로 3가지를 제시한다.
-Consider marking one of the beans as @Primary, updating the consumer to accept multiple beans, or using @Qualifier to identify the bean that should be consumed
+위와 같이 같은 타입의 빈이 여러개인 경우 오류와 함께 해결을 위한 방법으로 3가지를 제시한다.  
+__Consider marking one of the beans as @Primary, updating the consumer to accept multiple beans, or using @Qualifier to identify the bean that should be consumed__
 
 1. Consider making one of the beans as @Primary
 2. updating the consumer to accept multiple beans
