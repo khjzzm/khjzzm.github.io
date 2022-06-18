@@ -21,3 +21,5 @@ __Consider marking one of the beans as @Primary, updating the consumer to accept
 
 ### @Qualifier
 인스턴스에 Bean id를 직접 선택하여 의존성 주입을 강제한다. default Bean id는 클래스의 첫 글자를 소문자로 한 문자열이다.
+
+실무에서 인터페이스 적용을 해봐야겠다.
