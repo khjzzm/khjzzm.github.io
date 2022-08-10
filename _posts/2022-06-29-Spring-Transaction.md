@@ -117,6 +117,10 @@ org.springframework.transaction.annotation.Transactional
 수 있다. 그런데 이 기능은 트랜잭션 관련 코드가 눈에 보이지 않고, AOP를 기반으로 동작하기 때문에, 실제
 트랜잭션이 적용되고 있는지 아닌지를 확인하기가 어렵다.
 
+TransactionSynchronizationManager.isActualTransactionActive()
+현재 쓰레드에 트랜잭션이 적용되어 있는지 확인할 수 있는 기능이다. 결과가 true 면 트랜잭션이 적용되어
+있는 것이다. 트랜잭션의 적용 여부를 가장 확실하게 확인할 수 있다.
+
 ### 트랜잭션 적용 위치
 ### 트랜잭션 AOP 주의 사항 - 프록시 내부 호출1
 ### 트랜잭션 AOP 주의 사항 - 프록시 내부 호출2
