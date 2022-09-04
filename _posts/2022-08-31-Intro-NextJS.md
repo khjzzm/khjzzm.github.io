@@ -11,12 +11,12 @@ npx create-next-app@latest --typescriopt
 
 package.json
 ~~~json
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
-  },
+"scripts": {
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "lint": "next lint"
+},
 ~~~
 
 ## Pages
