@@ -365,5 +365,60 @@ sum(), max(), min(), avg(), acount()와 같은 집계함수를 window를 이용�
 ### 집계(Aggregate) Analytic SQL 실습 - 02
 ### 집계(Aggregate) Analytic SQL 실습 - 04
 
----
 ### 다양한 window 절의 이해 - 01
+~~~
+windowing_clause = 
+    { ROWS | RANGE }
+    { BETWEEN 
+        { UNBOUNDED PRECEDING | CURRENT ROW | value_expr {PRECEDING | FOLLOWING }
+    }
+    AND
+    { UNBOUNDED FOLLOWING | CURRENT ROW | value_expr {PRECEDING | FOLLOWING }
+    }
+   | {UNBOUNDED PRECEDING | CURRENT ROW | value_expr PRECEDING}
+   }
+~~~
+
+- ROWS | RANGE
+  - Window의 개별 row를 정의함. Rows는 물리적인 row를, Range는 논리적인 row를 의미. Order by 절이 없으면 해당 구문은 기술할 수 없음.
+
+- BETWEEN ... AND
+  - Window의 시작과 종료 지점을 기술. Between 다음이 시작 지점, ANd 다음이 종료 지점
+  - Between이 없다면 Row|Range 다음이 시작점, (기본 설정으로) 현재 Row(Current row)가 종료점으로 설정.
+
+- UNBOUNDED PRECEDING 
+  - Window의 시작이 Partition의 첫번쨰 row부터 시작함을 기술. Window의 종료점으로는 사용될 수 없음.
+
+- UNBOUNDED FOLLOWING
+  - Window의 종료가 Partition의 마지막 row에서 종료됨을 기술. Window의 시작점으로는 사용될 수 없음.
+
+- CURRENT ROW
+  - Window의 시작점 또는 종료점으로 사용될 수 있으나, 보통은 종료점으로 사용.
+  - 시작점으로 사용시 window의 종료가 현재 row에서 종료됨을 기술
+  - 시작점으로 사용시 window의 시작이 현재 row에서 시작됨을 기술
+
+### 다양한 window 절의 이해 - 02
+default : range(rows) between unbounded preceding and current row
+
+
+### 이동 평균(Moving Average)
+### 이동평균 Analytic SQL 실습
+### 집계 Analytic SQL에서 불연속 일자 데이터 처리 시 유의 사항
+### window절에 range 사용 시 유의 사항.
+- range는 논리적인 row 위치를 지정하므로 보통은 숫자값과 interval값으로 window의 크기를 설정함.
+- 또한 range는 rows와 동일한 window크기 systax도 사용 가능함
+- 집계계열 analytic 함수는 order by절이 있을 경우 window 절은 기본적으로 range between unbounded precding and current row임.
+- 하지만 range를 적용할 경우는 order by에서 동일 값이 있을 경우 current row를 자신의 row가 아닌 동일 값이 있는 전체 row를 동일 그룹으로 간주하여 집계 analytic을 적용하므로 rows를 명시적으오 사용하는 경우와 값이 달라질 수 있음
+
+~~~postgresql
+select empno, deptno, sal
+, sum(sal) over (partition by deptno order by sal) as sum_default
+, sum(sal) over (partition by deptno order by sal range between unbounded preceding and current row) as sum_range
+, sum(sal) over (partition by deptno order by sal rows between unbounded preceding and current row) as sum_rows
+from hr.emp;
+
+select empno, deptno, sal, date_trunc('month', hiredate)::date as hiremonth
+     , sum(sal) over (partition by deptno order by date_trunc('month', hiredate)) as sum_default
+     , sum(sal) over (partition by deptno order by date_trunc('month', hiredate) rows between unbounded preceding and current row) as sum_rows
+from hr.emp;
+~~~
