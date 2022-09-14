@@ -39,7 +39,7 @@ password : postgres
 
 ### 조인실습 01
 ### 조인실습 02
-~~~postgresql
+~~~
 -- 부서명 SALES와 RESEARCH 소속 직원별로 과거부터 현재까지 모든 급여를 취합한 평균 급여
 with 
 temp_01 as 
@@ -62,7 +62,7 @@ group by empno;
 ### Inner 조인, Left/Right Outer 조인, Full Outer 조인의 이해
 ### Outer 조인 실습 01
 ### Outer 조인 실습 02
-~~~postgresql
+~~~
 select a.customer_id, a.contact_name, coalesce(b.order_id, 0) as order_id, b.order_date
 	, c.first_name||' '||c.last_name as employee_name, d.company_name as shipper_name  
 from nw.customers a
@@ -80,7 +80,7 @@ coalesce(a, b, ..., n) a, b... 가 null이면 n로 대체 한다.
 - Non Equi 조인 : 키 값으로 연결시 = 이 아닌 다른 연산자(between, >, >=, <, <=)를 사용하는 조인
 - Cross 조인(Cartesian Product 조인): 조인 컬럼없이 두 테이블 간 가능한 모든 연결을 결합하는 조인 방식
 ### Non Equi 조인과 Cross 조인 실습
-~~~postgresql
+~~~
 -- cross 조인
 with
 temp_01 as (
@@ -106,14 +106,14 @@ from hr.dept a
 
 
 ### to_date, to_timestamp, to_char 함수를 이용한 형변환 실습
-~~~postgresql
+~~~
 select pg_typeof(to_timestamp('2022-01-01', 'yyyy-mm-dd'));
 ~~~
 pg_typeof : 타입 확인
 
 
 ### extract와 date_part 함수를 이용하여 년/월/일/시/분/초 추출하기
-~~~postgresql
+~~~
 -- extract와 date_part를 이용하여 년, 월, 일 추출
 select a.* 
 	, extract(year from hiredate) as year
@@ -167,7 +167,7 @@ Count(distinct)
 **Pivoting**
 Group by 시 행 레벨로 만들어진 데이터를 열 레벨로 전환할 때 Aggregate와 case when을 결합하여 사용
 
-~~~postgresql
+~~~
 select job, sum(sal) as sales_sum
 from hr.emp a
 group by job;
@@ -182,7 +182,7 @@ from emp;
 ~~~
 
 ### Group By와 집계 함수의 case when을 이용한 피봇팅 실습
-~~~postgresql
+~~~
 -- deptno + job 별로 group by 		     
 select deptno, job, sum(sal) as sal_sum
 from hr.emp
@@ -225,7 +225,7 @@ group by deptno;
 - Rollup은 계층적인 방식으로 Group by 추가 수행
 - Cube는 Group by 절에 기재된 컬럼들의 가능한 combination 으로 Group by 수행
 
-~~~postgresql
+~~~
 --deptno + job레벨 외에 dept내의 전체 job 레벨(결국 dept레벨), 전체 Aggregation 수행. 
 select deptno, job, sum(sal)
 from hr.emp
@@ -257,7 +257,7 @@ Group by 절의 나열된 컬럼수가 N개이면 Group by는 N+1 수행
 Group by 절의 나열된 컬럼수가 N개이면 Group by는 2<sup>n</sup> 수행
 
 ### Group By Rollup 실습
-~~~postgresql
+~~~
 -- 년+월+일별 매출합 구하되, 월별 소계 매출합, 년별 매출합, 전체 매출합을 함께 구하기
 with 
 temp_01 as (
@@ -326,7 +326,7 @@ rank() OVER (
 )
 ~~~
 
-~~~postgresql
+~~~
 select a.*
 	, rank() over (order by comm desc) as comm_rank
 	, row_number() over (order by comm desc) as comm_rnum
@@ -379,12 +379,12 @@ windowing_clause =
    }
 ~~~
 
-- ROWS | RANGE
+- ROWS , RANGE
   - Window의 개별 row를 정의함. Rows는 물리적인 row를, Range는 논리적인 row를 의미. Order by 절이 없으면 해당 구문은 기술할 수 없음.
 
 - BETWEEN ... AND
   - Window의 시작과 종료 지점을 기술. Between 다음이 시작 지점, ANd 다음이 종료 지점
-  - Between이 없다면 Row|Range 다음이 시작점, (기본 설정으로) 현재 Row(Current row)가 종료점으로 설정.
+  - Between이 없다면 Row , Range 다음이 시작점, (기본 설정으로) 현재 Row(Current row)가 종료점으로 설정.
 
 - UNBOUNDED PRECEDING 
   - Window의 시작이 Partition의 첫번쨰 row부터 시작함을 기술. Window의 종료점으로는 사용될 수 없음.
@@ -410,7 +410,7 @@ default : range(rows) between unbounded preceding and current row
 - 집계계열 analytic 함수는 order by절이 있을 경우 window 절은 기본적으로 range between unbounded precding and current row임.
 - 하지만 range를 적용할 경우는 order by에서 동일 값이 있을 경우 current row를 자신의 row가 아닌 동일 값이 있는 전체 row를 동일 그룹으로 간주하여 집계 analytic을 적용하므로 rows를 명시적으오 사용하는 경우와 값이 달라질 수 있음
 
-~~~postgresql
+~~~
 select empno, deptno, sal
 , sum(sal) over (partition by deptno order by sal) as sum_default
 , sum(sal) over (partition by deptno order by sal range between unbounded preceding and current row) as sum_range
