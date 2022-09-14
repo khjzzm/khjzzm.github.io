@@ -400,8 +400,16 @@ windowing_clause =
 ### 다양한 window 절의 이해 - 02
 default : range(rows) between unbounded preceding and current row
 
-
 ### 이동 평균(Moving Average)
+~~~
+select ord_date, daily_sum
+, avg(daily_sum) over (order by ord_date rows between 2 preceding and current row) as ma_3days
+from temp_01
+~~~
+3일 평균 - 2  
+5일 평균 - 4  
+20일 평균 - 19  
+
 ### 이동평균 Analytic SQL 실습
 ### 집계 Analytic SQL에서 불연속 일자 데이터 처리 시 유의 사항
 ### window절에 range 사용 시 유의 사항.
@@ -422,3 +430,35 @@ select empno, deptno, sal, date_trunc('month', hiredate)::date as hiremonth
      , sum(sal) over (partition by deptno order by date_trunc('month', hiredate) rows between unbounded preceding and current row) as sum_rows
 from hr.emp;
 ~~~
+
+
+## Analytic SQL - lead/lag, first_value/last_value, 순위/역분위 함수
+### lead와 lag Analytic SQL 이해
+- LAG는 현재 행보다 이전 행의 값을 가져옴
+- LEAD는 현재 행보다 다음 행의 값을 가져옴
+- LAG()/LEAD() 함수내의 인자로 아래 3개 인자를 입력받음.
+  - expr : 적용할 컬럼명
+  - offset : 값을 가져올 행의 위치 offest값. 기본값은 1임
+  - default : 행의 위치 offset으로 Null 값일 때 대체할 값. 기본값음 Null 임.
+- partition by는 생략 가능하지만, order by는 반드시 필요함.
+- window 절은 사용되지 않습니다.
+
+### lead와 lag Analytic SQL 실습
+
+### first_value와 last_value Analytic SQL 이해
+window에서 order by 로 기술된 순으로 가장 첫번째/가장 마지막에 위치한 데이터를 가져옴.
+- first_value는 window의 가장 첫번째에 위치한 데이터를 가져옴.
+- last_value는 window의 가장 마지막에 위치한 데이터를 가져옴. (window 절이 rows between unbounded preceding and unbounded following이 되어야함)
+- partition by는 생략 가능하지만, order by 는 반드시 필요함.
+- window 절은 생략 가능합니다. 생략 시 range between unbounded preceding and current row
+
+### first_value와 last_value Analytic SQL 실습
+
+
+### 순위 함수 cume_dist, percent_rank, ntile 이해
+- cume_dist() 분위수를 파티션내의 건수로 적용하고 0~1 사이 값으로 변환 파티션 내에서 자신을 포함한 이전 로우수/파티션 내의 로우 건수로 계산
+- percent_rank() Rank()를 0~1 사이 값으로 정규화 시킴 (파티션 내의 rank()-1)/(파티션 내의 로우 건수-1)
+- ntile() 지정된 숫자만큼의 분위를 정하여 그룹핑하는데 적용
+
+### 순위 함수 cume_dist, percent_rank, ntile 실습
+### 역분위 함수 percentile_disc와 percentile_cont 이해와 실습
