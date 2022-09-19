@@ -166,3 +166,19 @@ ex) CORS(교차 출처 리소스 공유)
 - Client-side routing with optimized prefetching
 - API Routes(with Serverless Function)
 - Development environment(with Fast Refresh)
+
+## Data를 가져오는 함수 getSortedPostsData의 확장
+- 다른 File 조회
+- 외부 api 요청
+- DB 조회
+
+### getStaticPaths 가 반환하는 fallback의 의미?
+fallback의 의미?
+fallback: false, true, 'blocking'
+
+## Vercel 배포
+github + vercel import deploay
+
+## Tailwind CSS
+[https://tailwindcss.com/docs/guides/nextjs](https://tailwindcss.com/docs/guides/nextjs)
+
