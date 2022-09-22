@@ -276,4 +276,85 @@ Absolute Imports and Module Path Aliases
 - Add global CSS
 
 ## Custom Document
+
+- <html> <body>
+- _document는 server에서 동작 고로, onClick 은 동작하지 않음
+- import {Html, Head, Main, NextScript} from 'next/document'
+- not Data Fetching methods
+
+
 ## Custom Error Page
+404.js
+
+## Perfomance 측정
+[https://web.dev](web.dev)
+1. LCP(2.5s)
+2. FID(100ms)
+3. CLS(0.1)
+
+- Measuring performance 를 사용하여 측정
+
+
+## Error Handling
+- Handling Errors in Developement - Overlay
+- Handling Server Errors - Custom Error Page
+- Hadnling Client Error - Error Boundaries
+  
+_error.js
+
+## React 18
+- Automatic Batching
+- Transitions
+- New Suspense
+- New Client & Server Rendering APIs
+- Strinct Mode
+- useId
+- useTransition
+- useDeferredValue
+- useSyncExternalStore
+- useInsertionEffect...
+  
+## Data Fetching API
+**getInitialProps**    
+async / static method / return serialized data / only in page / 
+server-side rendering / SEO / disable AUtomatic Static Opiomiztion    
+
+
+**getServerSideProps**    
+export function / pre-render each request / not be bundled for the client-side / 
+reutrn a object (props or notFound or redirect)   
+
+**getStaticPaths**
+export a function from a page that uses Dynamic Routes / 
+statically pre-render all the paths specified by it / 
+reutrn paths / fallback (false : 404 / ture / 'blocking') /
+ISRd은 fallback : 'blocking' 이어야 가능
+
+## Router
+함수형 컴포넌트에서는 useRouter()를 사용   
+클래스 컴포넌트는 withRouter를 활용
+
+- router.push : historyr가 쌓이는 이동
+- router.replace : history가 쌓이지 않는 이동 
+- router.prefetch : 미리 페치해오기
+- router.beforePopState : history popState 때 cb 사용가능 return true 하지 않으면 온전히 동작 안함
+- router.back : 뒤로가기
+- router.reload : 새로고침
+- router.events.[on/off]
+
+## Link
+hfef 만 required  
+as / passHref / prefetch / replace / scroll / shallow / locale
+
+
+## next/image
+
+## next/script
+
+## next/head
+
+## next/amp
+
+## next/server
+
+## next/future/image
