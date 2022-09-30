@@ -139,9 +139,9 @@ Data fetching 을 일으키고 싶지 않다면?
 
 ### url을 바꾸는 3가지 방식
 
-1.location.replace("url): 로컬 state 유지 안됨(리렌더)
-2.router.push(url): 로컬 state 유지 / data fetching o
-3.router.push(url, as {shallow: true}): 로컬 state 유지 / data fetching x
+1. location.replace("url): 로컬 state 유지 안됨(리렌더)
+2. router.push(url): 로컬 state 유지 / data fetching o
+3. router.push(url, as {shallow: true}): 로컬 state 유지 / data fetching x
 
 ## Next.js 가 제공하는 API Routes
 
