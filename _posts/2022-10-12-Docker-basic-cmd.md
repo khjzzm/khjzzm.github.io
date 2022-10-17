@@ -246,4 +246,6 @@ mysql을 삭제후에 다시 실행하면 데이터베이스 오류가 발생합
 -v /my/own/datadir:/var/lib/mysql
 ~~~
 
-
+~~~
+docker run -dp 5432:5432 --name postgresql01 -e POSTGRES_PASSWORD=test -v pgdata:/var/lib/postgresql/data postgres
+~~~
