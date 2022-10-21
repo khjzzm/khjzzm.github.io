@@ -248,4 +248,12 @@ mysql을 삭제후에 다시 실행하면 데이터베이스 오류가 발생합
 
 ~~~
 docker run -dp 5432:5432 --name postgresql01 -e POSTGRES_PASSWORD=test -v pgdata:/var/lib/postgresql/data postgres
+docker exec -it postgres /bin/bash
+psql -U postgres
+~~~
+
+
+~~~
+docker run -d -p 6379:6379 --name redis01 redis 
+docker exec -it redis-test redis-cli
 ~~~
