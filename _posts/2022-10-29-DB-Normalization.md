@@ -28,3 +28,20 @@ title: 데이터베이스 정규화
 
 ### 1NF(First Normal Form)
 1NF를 만족할려면 **도메인이 원자값** 이어야 한다.
+
+### 2NF(Second Normal Form)
+2NF를 만족하려면 **부분적 함수 종속을 제거**해야 한다.  
+즉 완전 함수 종속이 되도록 해야 한다.
+
+### 3NF(Third Normal Form)
+3NF를 만족하려면 **이행적 함수 종속을 제거**해야 한다.   
+A->B 이고 B->C일 때 A->C 인 관계
+
+### BCNF(Boyce and Codd Normal Form)
+BCNF를 만족하려면 결정자이면서 후보키가 아닌 것를 제거해야 한다.
+
+### 4NF(Fourth Normal Form)
+4NF를 만족하려면 다치 종속성을 제거해야 한다.
+
+### 5NF(Fifth Normal Form)
+5NF를 만족하려면 조인 종속성을 제거해야 한다.
