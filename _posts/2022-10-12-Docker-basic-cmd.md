@@ -254,12 +254,18 @@ docker volume list
 컨테이너를 실행할 떄 `-v {볼륨이름 || 로컬경로}:{컨테이너 안 경로}` 또는 `--volume={볼륨이름 ||로컬경로}:{컨테이너 안 경로}` 옵션을 부여하여 
 볼륨을 직접 설정 할 수 있다. mysql 볼륨은 `/var/lib/mysql` 에 마운트 되어야한다.
 
+
+-------
+
+~~~
+docker run -rm --name mysql -e MYSQL_ROOT_PASSWORD=1234 -v mysql-volume:/var/lib/mysql -d mysql
+~~~
+
 ~~~
 docker run -dp 5432:5432 --name postgresql01 -e POSTGRES_PASSWORD=test -v pgdata:/var/lib/postgresql/data postgres
 docker exec -it postgres /bin/bash
 psql -U postgres
 ~~~
-
 
 ~~~
 docker run -d -p 6379:6379 --name redis01 redis 
