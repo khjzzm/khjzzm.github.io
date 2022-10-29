@@ -239,7 +239,7 @@ docker run -d -p 3306:3306 \
  -e MYSQL_ALLOW_EMPTY_PASSWORD=true \
  --network=app-network \
  --name mysql \
- -v /Users/hyunjin/Workspace/github.com/hyunjin/docker-guide/ch01/mysql:/var/lib/mysql \ mysql:5.7
+ -v mysql-data-vol:/var/lib/mysql \ mysql
 ~~~
 mysql을 삭제후에 다시 실행하면 데이터베이스 오류가 발생합니다.
 ~~~
@@ -258,7 +258,7 @@ docker volume list
 -------
 
 ~~~
-docker run -rm --name mysql -e MYSQL_ROOT_PASSWORD=1234 -v mysql-volume:/var/lib/mysql -d mysql
+docker run --name mysql -e MYSQL_ROOT_PASSWORD=1234 -v mysql-volume:/var/lib/mysql -d mysql
 ~~~
 
 ~~~
