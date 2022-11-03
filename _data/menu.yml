@@ -14,7 +14,7 @@ entries:
       show_more_text: See more coding...
       show_more_url: coding-archive.html
 
-  - title: spring in action
+  - title: spring edition
     post_list:
       category: spring
       limit: 3
@@ -30,7 +30,7 @@ entries:
       show_more_text: See more book...
       show_more_url: book-archive.html
 
-  - title: corssfit
+  - title: crossfit
     post_list:
       category: crossfit
       limit: 3
@@ -42,5 +42,4 @@ entries:
     url: bookmark
 
   - title: "<a href='https://github.com/khjzzm' target='_blank'>github repo<a/>"
-  - title: "<a href='https://khjzzm.github.io/resume' target='_blank'>resume<a/>"
   - title: "<a href='mailto:khjzzm@gmail.com?subject=제목&body=내용'>mail</a>"
