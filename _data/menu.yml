@@ -14,6 +14,14 @@ entries:
       show_more_text: See more coding...
       show_more_url: coding-archive.html
 
+  - title: spring in action
+    post_list:
+      category: spring
+      limit: 3
+      show_more: true
+      show_more_text: See more spring...
+      show_more_url: spring-archive.html
+
   - title: book
     post_list:
       category: book
