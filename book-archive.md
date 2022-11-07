@@ -1,5 +1,5 @@
 ---
 layout: archive
-which_category: crossfit
-title: All posts of category 'crossfit'
+which_category: book
+title: All posts of category 'book'
 ---
