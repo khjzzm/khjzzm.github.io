@@ -43,8 +43,8 @@ public class Member {
 1. `@JsonIgnore` 사용
 
 2. `@JsonManagedReference`, `@JsonBackReference` 사용   
-양방향 관계에서 정방향(연관관계 주인)에 JsonManagedReference 추가,  
-역방향에 JsonBackReference 추가
+양방향 관계에서 정방향(연관관계 주인)에 JsonManagedReference 추가 (정상적으로 직렬화 수행)   
+역방향에 JsonBackReference 추가(직렬화가 되지 않도록 수행)
 
 3. return to DTO   
 주 원인은 양방향 관계에서 entity 자체를 그대로 return 하였기 때문이다. DTO를 만들어서 필요한 데이터만 옮겨 닮도록하자.
