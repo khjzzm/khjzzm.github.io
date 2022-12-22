@@ -71,4 +71,51 @@ public class AppConfig {}
 
 
 
+### 공통 인터페이스 분석
+- JpaRepository 인터페이스: 공통 CRUD 제공
+- 제네릭은 <엔티티 타입, 식별자 타입> 설정
 
+~~~java
+public interface JpaRepository<T, ID extends Serializable> extends PagingAndSortingRepository<T, ID>{
+    
+}
+~~~
+
+**주요 메서드**
+- save(S) : 새로운 엔티티는 저장하고 이미 있는 엔티티는 병합한다.
+- delete(T) : 엔티티 하나를 삭제한다. 내부에서 EntityManager.remove() 호출
+- findById(ID) : 엔티티 하나를 조회한다. 내부에서 EntityManager.find() 호출
+- getOne(ID) : 엔티티를 프록시로 조회한다. 내부에서 EntityManager.getReference() 호출 
+- findAll(...) : 모든 엔티티를 조회한다. 정렬( Sort )이나 페이징( Pageable ) 조건을 파라미터로 제공할 수 있다.
+
+
+### 쿼리 메소드 기능
+
+**스프링 데이터 JPA가 제공하는 마법 같은 기능**
+#### 메소드 이름으로 쿼리 생성
+- 조회: find...By ,read...By ,query...By get...By,
+  - [https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.query-creation](https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.query-creation)
+  -  예:) findHelloBy 처럼 ...에 식별하기 위한 내용(설명)이 들어가도 된다.
+- COUNT: count...By 반환타입 long
+- EXISTS: exists...By 반환타입 boolean
+- 삭제: delete...By, remove...By 반환타입 long 
+- DISTINCT: findDistinct, findMemberDistinctBy 
+- LIMIT: findFirst3, findFirst, findTop, findTop3
+  - [https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.limit-query-result](https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.limit-query-result)
+     
+참고: 이 기능은 엔티티의 필드명이 변경되면 인터페이스에 정의한 메서드 이름도 꼭 함께 변경해야 한다. 그렇지 않으면 애플리케이션을 시작하는 시점에 오류가 발생한다.  이렇게 애플리케이션 로딩 시점에 오류를 인지할 수 있는 것이 스프링 데이터 JPA의 매우 큰 장점이다.
+
+#### NamedQuery
+- 스프링 데이터 JPA는 선언한 "도메인 클래스 + .(점) + 메서드 이름"으로 Named 쿼리를 찾아서 실행 
+- 만약 실행할 Named 쿼리가 없으면 메서드 이름으로 쿼리 생성 전략을 사용한다. 
+- 필요하면 전략을 변경할 수 있지만 권장하지 않는다.
+  - 참고: [https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.query-lookup-strategies](https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.query-lookup-strategies)
+
+참고: 스프링 데이터 JPA를 사용하면 실무에서 Named Query를 직접 등록해서 사용하는 일은 드물다. 대신 @Query 를 사용해서 리파지토리 메소드에 쿼리를 직접 정의한다.
+
+
+#### @Query - 리파지토리 메소드에 쿼리 정의 파라미터 바인딩
+#### 반환 타입
+#### 페이징과 정렬
+#### 벌크성 수정 쿼리
+#### @EntityGraph
