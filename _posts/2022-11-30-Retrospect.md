@@ -21,5 +21,6 @@ DBMS, Redis는 로컬에서 실행 했었는데, 이 부분도 도커 컨테이�
 1. JPA, Spring Security
 
 12월 goal
+0. Spring data JPA, queryDSL
 1. API 배포 (Docker)
 2. Gradle 학습
