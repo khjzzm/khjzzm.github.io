@@ -115,6 +115,39 @@ public interface JpaRepository<T, ID extends Serializable> extends PagingAndSort
 
 
 #### @Query - 리파지토리 메소드에 쿼리 정의 파라미터 바인딩
+- @org.springframework.data.jpa.repository.Query 어노테이션을 사용
+- 실행할 메서드에 정적 쿼리를 직접 작성하므로 이름 없는 Named 쿼리라 할 수 있음
+- JPA Named 쿼리처럼 애플리케이션 실행 시점에 문법 오류를 발견할 수 있음(매우 큰 장점!)
+
+참고: 실무에서는 메소드 이름으로 쿼리 생성 기능은 파라미터가 증가하면 메서드 이름이 매우 지저분해진다. 따라서 @Query 기능을 자주 사용하게 된다.
+
+**@Query, 값, DTO 조회하기**
+
+~~~java
+@Query("select m.username from Member m")
+List<String> findUsernameList();
+
+@Query("select new study.datajpa.dto.MemberDto(m.id, m.username, t.name) " +
+        "from Member m join m.team t")
+List<MemberDto> findMemberDto();
+~~~
+
+
+**파라미터 바인딩**
+- 위치 기반
+- 이름 기반
+~~~java
+select m from Member m where m.username = ?0 //위치 기반 
+select m from Member m where m.username = :name //이름 기반
+~~~
+
+**컬렉션 파라미터 바인딩**   
+Collection 타입으로 in절 지원
+~~~java
+@Query("select m from Member m where m.username in :names")
+List<Member> findByNames(@Param("names") List<String> names);
+~~~
+
 #### 반환 타입
 #### 페이징과 정렬
 #### 벌크성 수정 쿼리
