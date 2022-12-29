@@ -3,8 +3,6 @@ layout: post
 title: 스프링 데이터 JPA
 ---
 
-## 라이브러리 살펴보기
-
 ~~~
 ./gradlew dependencies --configuration compileClasspath
 ~~~
@@ -117,8 +115,7 @@ public interface JpaRepository<T, ID extends Serializable> extends PagingAndSort
 - 스프링 데이터 JPA는 선언한 "도메인 클래스 + .(점) + 메서드 이름"으로 Named 쿼리를 찾아서 실행
 - 만약 실행할 Named 쿼리가 없으면 메서드 이름으로 쿼리 생성 전략을 사용한다.
 - 필요하면 전략을 변경할 수 있지만 권장하지 않는다.
-    -
-    참고: [https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.query-lookup-strategies](https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.query-lookup-strategies)
+    - 참고: [https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.query-lookup-strategies](https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.query-lookup-strategies)
 
 참고: 스프링 데이터 JPA를 사용하면 실무에서 Named Query를 직접 등록해서 사용하는 일은 드물다. 대신 @Query 를 사용해서 리파지토리 메소드에 쿼리를 직접 정의한다.
 
@@ -240,3 +237,65 @@ public interface MemberRepository extends Repository<Member, Long> {
 2. 부득이하게 영속성 컨텍스트에 엔티티가 있으면 벌크 연산 직후 영속성 컨텍스트를 초기화 한다.
 
 #### @EntityGraph
+연관된 엔티티들을 SQL 한번에 조회하는 방법
+
+member team은 지연로딩 관계이다. 따라서 다음과 같이 team의 데이터를 조회할 때 마다 쿼리가 실행된다. (N+1 문제 발생)
+
+참고: 다음과 같이 지연 로딩 여부를 확인할 수 있다.
+~~~java
+//Hibernate 기능으로 확인
+Hibernate.isInitialized(member.getTeam())
+//JPA 표준 방법으로 확인
+PersistenceUnitUtil util = em.getEntityManagerFactory().getPersistenceUnitUtil();
+util.isLoaded(member.getTeam());
+~~~
+
+**JPQL 페치 조인**
+
+**EntityGraph**
+~~~java
+//공통 메서드 오버라이드
+@Override
+@EntityGraph(attributePaths = {"team"})
+List<Member> findAll();
+
+//JPQL + 엔티티 그래프 
+@EntityGraph(attributePaths = {"team"})
+@Query("select m from Member m")
+List<Member> findMemberEntityGraph();
+
+//메서드 이름으로 쿼리에서 특히 편리하다.
+@EntityGraph(attributePaths = {"team"})
+List<Member> findByUsername(String username)
+~~~
+
+#### JPA Hint & Lock JPA Hint
+JPA 쿼리 힌트(SQL 힌트가 아니라 JPA 구현체에게 제공하는 힌트)
+
+~~~java
+@QueryHints(value = @QueryHint(name = "org.hibernate.readOnly", value = "true"))
+Member findReadOnlyByUsername(String username);
+~~~
+ 
+
+**Lock**
+~~~java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+List<Member> findByUsername(String name);
+~~~
+- org.springframework.data.jpa.repository.Lock 어노테이션을 사용 
+- JPA가 제공하는 락은 JPA 책 16.1 트랜잭션과 락 절을 참고
+
+
+### 확장기능
+
+#### 사용자 정의 리포지토리 구현
+
+- 스프링 데이터 JPA 리포지토리는 인터페이스만 정의하고 구현체는 스프링이 자동 생성
+- 스프링 데이터 JPA가 제공하는 인터페이스를 직접 구현하면 구현해야 하는 기능이 너무 많음 
+- 다양한 이유로 인터페이스의 메서드를 직접 구현하고 싶다면?
+  - JPA 직접 사용( EntityManager )
+  - 스프링 JDBC Template 사용
+  - MyBatis 사용
+  - 데이터베이스 커넥션 직접 사용 등등...
+  - Querydsl 사용
