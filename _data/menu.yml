@@ -6,12 +6,12 @@ entries:
       show_more_text: See all posts...
       show_more_url: archive.html
 
-  - title: coding
+  - title: BTTP
     post_list:
-      category: coding
+      category: bttp
       limit: 3
       show_more: true
-      show_more_text: See more coding...
+      show_more_text: See more BTTP...
       show_more_url: coding-archive.html
 
   - title: book
