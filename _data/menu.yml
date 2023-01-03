@@ -12,7 +12,7 @@ entries:
       limit: 3
       show_more: true
       show_more_text: See more BTTP...
-      show_more_url: coding-archive.html
+      show_more_url: bttp-archive.html
 
   - title: book
     post_list:
