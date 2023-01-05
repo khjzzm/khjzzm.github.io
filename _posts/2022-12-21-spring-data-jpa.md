@@ -488,4 +488,25 @@ merge() 는 우선 DB를 호출해서 값을 확인하고, DB에 값이 없으�
 - 예) 검색 조건 하나하나
 - 스프링 데이터 JPA는 org.springframework.data.jpa.domain.Specification 클래스로 정의
 
+참고: 실무에서는 JPA Criteria를 거의 안쓴다! 대신에 QueryDSL을 사용하자.
 
+
+### Query By Example
+
+장점
+- 동적 쿼리를 편리하게 처리
+- 도메인 객체를 그대로 사용
+- 데이터 저장소를 RDB에서 NOSQL로 변경해도 코드 변경이 없게 추상화 되어 있음 
+- 스프링 데이터 JPA JpaRepository 인터페이스에 이미 포함
+
+단점
+- 조인은 가능하지만 내부 조인(INNER JOIN)만 가능함 외부 조인(LEFT JOIN) 안됨 
+- 다음과 같은 중첩 제약조건 안됨
+  - firstname = ?0 or (firstname = ?1 and lastname = ?2)
+- 매칭 조건이 매우 단순함
+  - 문자는 starts/contains/ends/regex
+  - 다른속성은정확한매칭( = )만지원
+
+참고
+- 실무에서 사용하기에는 매칭 조건이 너무 단순하고, LEFT 조인이 안됨
+- 실무에서는 QueryDSL을 사용하자
