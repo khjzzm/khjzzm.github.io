@@ -510,3 +510,96 @@ merge() 는 우선 DB를 호출해서 값을 확인하고, DB에 값이 없으�
 참고
 - 실무에서 사용하기에는 매칭 조건이 너무 단순하고, LEFT 조인이 안됨
 - 실무에서는 QueryDSL을 사용하자
+
+
+### Projections
+엔티티 대신에 DTO를 편리하게 조회할 때 사용
+전체 엔티티가 아니라 만약 회원 이름만 딱 조회하고 싶으면?
+
+**인터페이스 기반 Closed Projections**
+~~~java
+public interface UsernameOnly { 
+    String getUsername();
+}
+~~~
+조회할 엔티티의 필드를 getter 형식으로 지정하면 해당 필드만 선택해서 조회(Projection)
+
+~~~java
+public interface MemberRepository ... {
+    List<UsernameOnly> findProjectionsByUsername(String username);
+}
+~~~
+메서드 이름은 자유, 반환 타입으로 인지
+
+~~~sql
+select m.username from member m where m.username=‘m1’;`
+~~~
+SQL에서도 select절에서 username만 조회(Projection)하는 것을 확인
+
+
+**인터페이스 기반 Open Proejctions**
+~~~java
+public interface UsernameOnly { 
+    @Value("#{target.username + ' ' + target.age + ' ' + target.team.name}")
+    String getUsername();
+}
+~~~
+단! 이렇게 SpEL문법을 사용하면, DB에서 엔티티 필드를 다 조회해온 다음에 계산한다! 따라서 JPQL SELECT 절 최적화가 안된다.
+
+
+동적 Projections   
+다음과 같이 Generic type을 주면, 동적으로 프로젝션 데이터 번경 가능
+~~~java
+<T> List<T> findProjectionsByUsername(String username, Class<T> type);
+~~~
+~~~java
+List<UsernameOnly> result = memberRepository.findProjectionsByUsername("m1",UsernameOnly.class);
+~~~
+
+중첩 구조 처리
+~~~java
+public interface NestedClosedProjection {
+    String getUsername();
+    TeamInfo getTeam();
+    interface TeamInfo {
+        String getName();
+    } 
+}
+~~~
+
+주의
+- 프로젝션 대상이 root 엔티티면, JPQL SELECT 절 최적화 가능 
+- 프로젝션 대상이 ROOT가 아니면
+  - LEFT OUTER JOIN 처리
+  - 모든 필드를 SELECT해서 엔티티로 조회한 다음에 계산
+
+정리
+  - 프로젝션 대상이 root 엔티티면 유용하다.
+  - 프로젝션 대상이 root 엔티티를 넘어가면 JPQL SELECT 최적화가 안된다! 
+  - 실무의 복잡한 쿼리를 해결하기에는 한계가 있다.
+  - 실무에서는 단순할 때만 사용하고, 조금만 복잡해지면 QueryDSL을 사용하자
+
+
+### 네이티브 쿼리
+가급적 네이티브 쿼리는 사용하지 않는게 좋음, 정말 어쩔 수 없을 때 사용   
+최근에 나온 궁극의 방법 스프링 데이터 Projections 활용
+
+스프링 데이터 JPA 기반 네이티브 쿼리 
+- 페이징 지원
+- 반환 타입
+  - Object[]
+  - Tuple
+  - DTO(스프링 데이터 인터페이스 Projections 지원)
+- 제약
+ - Sort 파라미터를 통한 정렬이 정상 동작하지 않을 수 있음(믿지 말고 직접 처리) 
+ - PQL처럼 애플리케이션 로딩 시점에 문법 확인 불가
+ - 동적 쿼리 불가
+
+- JPQL은 위치 기반 파리미터를 1부터 시작하지만 네이티브 SQL은 0부터 시작
+- 네이티브 SQL을 엔티티가 아닌 DTO로 변환은 하려면
+  - DTO 대신 JPA TUPLE 조회
+  - DTO 대신 MAP 조회
+  - @SqlResultSetMapping 복잡
+  - Hibernate ResultTransformer를 사용해야함 복잡
+  - https://vladmihalcea.com/the-best-way-to-map-a-projection-query-to-a-dto-with-jpa- and-hibernate/
+  - 네이티브 SQL을 DTO로 조회할 때는 JdbcTemplate or myBatis 권장
