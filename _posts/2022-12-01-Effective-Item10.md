@@ -19,6 +19,7 @@ title: equals는 일반 규약을 지켜 재정의 하라
 2. 대칭성(symmetry)
    - null이 아닌 모든 참조 값 x, y에 대해, x.equals(y)가 true면 y.equals(x)도 true다.
    - CaseInsensitiveString
+   
 ~~~java
 // 대칭성을 위반한 클래스
 public final class CaseInsensitiveString{
