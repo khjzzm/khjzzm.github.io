@@ -8,7 +8,7 @@ title: 토비의 스프링부트 - 이해와 원리
 ### 스프링 부트 소개
 스프링 부트(Spring Boot)는 스프링을 기반으로 실무 환경에 사용가능한 수준의 독립실행형 애플리케이션을 복잡한 고민 없이 빠르게 작성할 수 있게 도와주는 여러가지 도구의 모음이다.
 
->스프랭!=스프링부트!!
+>스프링!=스프링부트!!
 
 스프링 부트의 핵심 목표
 - 매우 빠르고 광범위한 영역의 스프링 개발 경험을 제공
@@ -111,3 +111,22 @@ WebClient가 request를 요청하면 Web Container가 동적 페이지를 구성
     1. spring shell
     2. init -b 2.7.6 -d web -g hyunjinspring -j 11 -n helloboot -x helloboot
     3. ./gradlew bootRun
+
+
+### Hello 컨트롤러
+### Hello API 테스트
+ - 웹 브라우저 개발자 도구
+ - curl
+ - HTTPie
+ - Intellij IDEA Ultimate- http request
+ - Postman API Platform
+ - JUnit Test
+ - 각종 API 테스트 도구
+
+### HTTP 요청과 응답
+**HTTP** 웹 Request와 Response의 기본 구조를 이해하고 내용을 확인할 수 있어야 한다
+
+Request
+- Request Line : Method, Path, HTTP Version
+- Headers
+- 
