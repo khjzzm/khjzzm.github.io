@@ -129,4 +129,13 @@ WebClient가 request를 요청하면 Web Container가 동적 페이지를 구성
 Request
 - Request Line : Method, Path, HTTP Version
 - Headers
-- 
+- Message Body
+
+Response
+- Status Line: HTTP Version, Status Code, Status Text
+- Headers
+- Message Body
+
+
+## 독립 실행형 서블릿 애플리케이션
+### Containerless 개발 준비
