@@ -303,6 +303,217 @@ public class BootApplication {
 http -v GET ":8080/hello?name=Spring"
 ~~~
 
+> 스프링 애플리케이션도 결국 서블릿을 사용합니다. 그러니까 독립실행형 스프링 애플리케이션이 됐다고 해서 서블릿이 안 쓰이는 건 아닙니다. 다만 스프링은 단순 HTTP 요청을 처리하는 서블릿만 관리하는 서블릿
+> 컨테이너와 달리 애플리케이션에서 사용되는 다양한 종류의 오브젝트를 만들어 관리하는 기능을 가지고 있습니다. 그 중에서 컨트롤러라고 불리는 것은 서블릿이 하던 작업을 더 효과적으로 처리하는 오브젝트로 스프링에서
+> 동작하는 것이지요.
+> 이해하신 대로 스프링도 서블릿을 이용해서 요청을 받아옵니다. 이 때 좀 특별한 종류의 서블릿인 프론트 컨트롤러라고 불리는 것이 사용되어지고요. 여기서 웹 요청을 처리하기 위한 많은 부가적인 작업이 일어납니다.
+> 스프링 애플리케이션으로 만들어서 가장 좋은 점은 더 이상 서블릿 기술을 신경 쓰지 않아도 된다가 아닐까 싶습니다. 서블릿이 내부적으로 동작은 하지만요.
+
 ## 독립 실행형 스프링 애플리케이션
 
 ## 스프링 컨테이너 사용
+
+~~~java
+public class BootApplication {
+    public static void main(String[] args) {
+
+        GenericApplicationContext applicationContext = new GenericApplicationContext();
+        applicationContext.registerBean(HelloController.class);
+        applicationContext.refresh();
+
+        ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+        WebServer webServer = serverFactory.getWebServer(servletContext -> {
+            servletContext.addServlet("frontcontroller", new HttpServlet() {
+                @Override
+                protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+                    //인증, 보안, 다국어, 공통 기능
+                    if (req.getRequestURI().equals("/hello") && req.getMethod().equals(HttpMethod.GET.name())) {
+                        String name = req.getParameter("name");
+
+                        HelloController helloController = applicationContext.getBean(HelloController.class);
+                        String ret = helloController.hello(name);
+
+                        resp.setContentType(MediaType.TEXT_PLAIN_VALUE);
+                        resp.getWriter().println(ret);
+                    } else {
+                        resp.setStatus(HttpStatus.NOT_FOUND.value());
+                    }
+                }
+            }).addMapping("/*");
+        });
+        webServer.start();
+    }
+}
+~~~
+
+~~~
+http -v GET ":8080/hello?name=Spring"
+~~~
+
+### 의존 오브젝트 추가
+
+~~~java
+public class HelloController {
+    public String hello(String name) {
+        SimpleHelloService simpleHelloService = new SimpleHelloService();
+        return simpleHelloService.sayHello(Objects.requireNonNull(name));
+    }
+}
+~~~
+
+~~~java
+public class SimpleHelloService {
+    String sayHello(String name) {
+        return "Hello" + name;
+    }
+}
+~~~
+
+### Dependency Injection
+
+**Spring IoC/DI Container**
+Interface를 상속 받아 구현한 Service를 Assembler를 통해서 주입 받는다. Assembler를 Spring Container라고 한다.
+
+### 의존 오브젝트 DI 적용
+
+~~~java
+public interface HelloService {
+    String sayHello(String name);
+}
+~~~
+
+~~~java
+public class SimpleHelloService implements HelloService {
+    @Override
+    public String sayHello(String name) {
+        return "Hello" + name;
+    }
+}
+~~~
+
+~~~java
+public class BootApplication {
+    public static void main(String[] args) {
+
+        GenericApplicationContext applicationContext = new GenericApplicationContext();
+        applicationContext.registerBean(HelloController.class);
+        applicationContext.registerBean(SimpleHelloService.class);
+        applicationContext.refresh();
+
+        ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+        WebServer webServer = serverFactory.getWebServer(servletContext -> {
+            servletContext.addServlet("frontcontroller", new HttpServlet() {
+                @Override
+                protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+                    //인증, 보안, 다국어, 공통 기능
+                    if (req.getRequestURI().equals("/hello") && req.getMethod().equals(HttpMethod.GET.name())) {
+                        String name = req.getParameter("name");
+
+                        HelloController helloController = applicationContext.getBean(HelloController.class);
+                        String ret = helloController.hello(name);
+
+                        resp.setContentType(MediaType.TEXT_PLAIN_VALUE);
+                        resp.getWriter().println(ret);
+                    } else {
+                        resp.setStatus(HttpStatus.NOT_FOUND.value());
+                    }
+                }
+            }).addMapping("/*");
+        });
+        webServer.start();
+    }
+}
+~~~
+
+~~~
+http -v GET ":8080/hello?name=Spring"
+~~~
+
+### DispatcherServlet으로 전환
+
+~~~java
+public class BootApplication {
+    public static void main(String[] args) {
+
+        //스프링 컨테이너
+        GenericWebApplicationContext applicationContext = new GenericWebApplicationContext();
+        applicationContext.registerBean(HelloController.class);
+        applicationContext.registerBean(SimpleHelloService.class);
+        applicationContext.refresh();
+
+        //서블릿 컨테이너
+        ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+        WebServer webServer = serverFactory.getWebServer(servletContext -> {
+            servletContext.addServlet("dispatcherServlet",
+                    new DispatcherServlet(applicationContext)
+            ).addMapping("/*");
+        });
+        webServer.start();
+    }
+}
+~~~
+
+~~~
+http -v GET ":8080/hello?name=Spring"
+~~~
+
+404
+
+### 애노테이션 매핑 정보 사용
+
+~~~java
+
+@RequestMapping
+public class HelloController {
+
+    private final HelloService helloService;
+
+    public HelloController(HelloService helloService) {
+        this.helloService = helloService;
+    }
+
+    @GetMapping(name = "/hello")
+    @ResponseBody
+    public String hello(String name) {
+        return helloService.sayHello(Objects.requireNonNull(name));
+    }
+}
+~~~
+
+~~~
+http -v GET ":8080/hello?name=Spring"
+~~~
+
+### 스프링 컨테이너로 통합
+
+~~~java
+public class BootApplication {
+    public static void main(String[] args) {
+
+        GenericWebApplicationContext applicationContext = new GenericWebApplicationContext() {
+            @Override
+            protected void onRefresh() {
+                super.onRefresh();
+
+                ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+                WebServer webServer = serverFactory.getWebServer(servletContext -> {
+                    servletContext.addServlet("dispatcherServlet",
+                            new DispatcherServlet(this)
+                    ).addMapping("/*");
+                });
+                webServer.start();
+            }
+        };
+        applicationContext.registerBean(HelloController.class);
+        applicationContext.registerBean(SimpleHelloService.class);
+        applicationContext.refresh();
+
+    }
+}
+~~~
+
+~~~
+http -v GET ":8080/hello?name=Spring"
+~~~
+
+### 자바코드 구성 정보 사용
