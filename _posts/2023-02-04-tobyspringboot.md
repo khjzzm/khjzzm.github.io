@@ -201,3 +201,108 @@ http -v :8080/hello
 ~~~
 
 ### 서블릿 요청 처리
+
+~~~java
+public class BootApplication {
+    public static void main(String[] args) {
+        ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+        WebServer webServer = serverFactory.getWebServer(servletContext -> {
+            servletContext.addServlet("hello", new HttpServlet() {
+                @Override
+                protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+                    String name = req.getParameter("name");
+                    resp.setStatus(HttpStatus.OK.value());
+                    resp.setHeader(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_PLAIN_VALUE);
+                    resp.getWriter().println("Hello Servlet" + name);
+                }
+            }).addMapping("/hello");
+        });
+        webServer.start();
+    }
+}
+~~~
+
+~~~
+http -v ":8080/hello?name=Spring"
+~~~
+
+### 프론트 컨트롤러
+
+- 서블릿 코드마다 중복 되는 패턴이 나옴.
+- 기본적인 서블릿 req, res는 한계가 있음
+- Front Controller 등장 중앙화된 컨트롤러 오브젝트를 만들어서 앞단에서 미리 처리
+- 공통적인 작업으로 인증, 보안, 다국어처리, 모든 웹 처리에 대한 return 해줘야하는 내용 등
+
+### 프론트 컨트롤러 전환
+
+~~~java
+public class BootApplication {
+    public static void main(String[] args) {
+        ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+        WebServer webServer = serverFactory.getWebServer(servletContext -> {
+            servletContext.addServlet("frontcontroller", new HttpServlet() {
+                @Override
+                protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+                    //인증, 보안, 다국어, 공통 기능
+                    if (req.getRequestURI().equals("/hello") && req.getMethod().equals(HttpMethod.GET.name())) {
+                        String name = req.getParameter("name");
+                        resp.setStatus(HttpStatus.OK.value());
+                        resp.setHeader(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_PLAIN_VALUE);
+                        resp.getWriter().println("Hello Servlet" + name);
+                    } else if (req.getRequestURI().equals("/user")) {
+
+                    } else {
+                        resp.setStatus(HttpStatus.NOT_FOUND.value());
+                    }
+                }
+            }).addMapping("/*");
+        });
+        webServer.start();
+    }
+}
+~~~
+
+~~~
+http -v POST ":8080/hello?name=Spring"
+~~~
+
+### Hello 컨트롤러 매핑과 바인딩
+
+~~~java
+public class BootApplication {
+    public static void main(String[] args) {
+        ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+        WebServer webServer = serverFactory.getWebServer(servletContext -> {
+            HelloController helloController = new HelloController();
+            servletContext.addServlet("frontcontroller", new HttpServlet() {
+                @Override
+                protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+                    //인증, 보안, 다국어, 공통 기능
+                    if (req.getRequestURI().equals("/hello") && req.getMethod().equals(HttpMethod.GET.name())) {
+                        String name = req.getParameter("name");
+
+                        String ret = helloController.hello(name);
+
+                        resp.setStatus(HttpStatus.OK.value());
+                        resp.setHeader(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_PLAIN_VALUE);
+                        resp.getWriter().println(ret);
+                    } else if (req.getRequestURI().equals("/user")) {
+
+                    } else {
+                        resp.setStatus(HttpStatus.NOT_FOUND.value());
+                    }
+                }
+            }).addMapping("/*");
+        });
+        webServer.start();
+    }
+}
+~~~
+
+~~~
+http -v GET ":8080/hello?name=Spring"
+~~~
+
+## 독립 실행형 스프링 애플리케이션
+
+## 스프링 컨테이너 사용
