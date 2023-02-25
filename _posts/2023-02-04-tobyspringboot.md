@@ -311,7 +311,7 @@ http -v GET ":8080/hello?name=Spring"
 
 ## 독립 실행형 스프링 애플리케이션
 
-## 스프링 컨테이너 사용
+### 스프링 컨테이너 사용
 
 ~~~java
 public class BootApplication {
@@ -517,3 +517,247 @@ http -v GET ":8080/hello?name=Spring"
 ~~~
 
 ### 자바코드 구성 정보 사용
+
+~~~java
+
+@Configuration
+public class BootApplication {
+    public HelloController helloController(HelloService helloService) {
+        return new HelloController(helloService);
+    }
+
+    public HelloService helloService() {
+        return new SimpleHelloService();
+    }
+
+    public static void main(String[] args) {
+        AnnotationConfigWebApplicationContext applicationContext = new AnnotationConfigWebApplicationContext() {
+            @Override
+            protected void onRefresh() {
+                super.onRefresh();
+
+                ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+                WebServer webServer = serverFactory.getWebServer(servletContext -> {
+                    servletContext.addServlet("dispatcherServlet",
+                            new DispatcherServlet(this)
+                    ).addMapping("/*");
+                });
+                webServer.start();
+            }
+        };
+        applicationContext.register(BootApplication.class);
+        applicationContext.refresh();
+    }
+}
+~~~
+
+### @Component 스캔
+
+~~~java
+
+@Configuration
+@ComponentScan
+public class BootApplication {
+
+    public static void main(String[] args) {
+        AnnotationConfigWebApplicationContext applicationContext = new AnnotationConfigWebApplicationContext() {
+            @Override
+            protected void onRefresh() {
+                super.onRefresh();
+
+                ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+                WebServer webServer = serverFactory.getWebServer(servletContext -> {
+                    servletContext.addServlet("dispatcherServlet",
+                            new DispatcherServlet(this)
+                    ).addMapping("/*");
+                });
+                webServer.start();
+            }
+        };
+        applicationContext.register(BootApplication.class);
+        applicationContext.refresh();
+
+    }
+}
+~~~
+
+~~~java
+
+@RequestMapping
+@Component
+public class HelloController {
+
+    private final HelloService helloService;
+
+    public HelloController(HelloService helloService) {
+        this.helloService = helloService;
+    }
+
+    @GetMapping(name = "/hello")
+    @ResponseBody
+    public String hello(String name) {
+        return helloService.sayHello(Objects.requireNonNull(name));
+    }
+}
+~~~
+
+~~~java
+
+@Component
+public class SimpleHelloService implements HelloService {
+    @Override
+    public String sayHello(String name) {
+        return "Hello" + name;
+    }
+}
+~~~
+
+~~~
+http -v GET ":8080/hello?name=Spring"
+~~~
+
+**Meta Annotation** 
+~~~java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Component
+public @interface MyComponent {
+}
+~~~
+계층형 아키텍처를 위해서 만든 경우가 있다. (stereotype)   
+ex) @Controller, @Service, @Repository
+
+~~~java
+@RestController
+public class HelloController {
+
+    private final HelloService helloService;
+
+    public HelloController(HelloService helloService) {
+        this.helloService = helloService;
+    }
+
+    @GetMapping(name = "/hello")
+    public String hello(String name) {
+        return helloService.sayHello(Objects.requireNonNull(name));
+    }
+}
+~~~
+
+
+### Bean의 생명주기 메소드
+~~~java
+@Configuration
+@ComponentScan
+public class BootApplication {
+
+    @Bean
+    public ServletWebServerFactory servletWebServerFactory() {
+        return new TomcatServletWebServerFactory();
+    }
+
+    @Bean
+    DispatcherServlet dispatcherServlet() {
+        return new DispatcherServlet();
+    }
+
+    public static void main(String[] args) {
+        AnnotationConfigWebApplicationContext applicationContext = new AnnotationConfigWebApplicationContext() {
+            @Override
+            protected void onRefresh() {
+                super.onRefresh();
+
+                ServletWebServerFactory serverFactory = this.getBean(ServletWebServerFactory.class);
+                DispatcherServlet dispatcherServlet = this.getBean(DispatcherServlet.class);
+
+                //아래를 주석 처리해도 컨테이너에 주입이됨 (Hierarchy 참고)
+                //dispatcherServlet.setApplicationContext(this);
+
+                WebServer webServer = serverFactory.getWebServer(servletContext -> {
+                    servletContext.addServlet("dispatcherServlet", dispatcherServlet
+                    ).addMapping("/*");
+                });
+                webServer.start();
+            }
+        };
+        applicationContext.register(BootApplication.class);
+        applicationContext.refresh();
+
+    }
+}
+~~~
+
+### SpringBootApplication
+~~~java
+public class MySpringApplication {
+
+    public static void run(Class<?> applicationClass, String... args) {
+        AnnotationConfigWebApplicationContext applicationContext = new AnnotationConfigWebApplicationContext() {
+            @Override
+            protected void onRefresh() {
+                super.onRefresh();
+
+                ServletWebServerFactory serverFactory = this.getBean(ServletWebServerFactory.class);
+                DispatcherServlet dispatcherServlet = this.getBean(DispatcherServlet.class);
+
+                //아래를 주석 처리해도 컨테이너에 주입이됨 (Hierarchy 참고)
+                //dispatcherServlet.setApplicationContext(this);
+
+                WebServer webServer = serverFactory.getWebServer(servletContext -> {
+                    servletContext.addServlet("dispatcherServlet", dispatcherServlet
+                    ).addMapping("/*");
+                });
+                webServer.start();
+            }
+        };
+        applicationContext.register(applicationClass);
+        applicationContext.refresh();
+    }
+}
+~~~
+
+~~~java
+@Configuration
+@ComponentScan
+public class BootApplication {
+
+    @Bean
+    public ServletWebServerFactory servletWebServerFactory() {
+        return new TomcatServletWebServerFactory();
+    }
+
+    @Bean
+    DispatcherServlet dispatcherServlet() {
+        return new DispatcherServlet();
+    }
+
+    public static void main(String[] args) {
+        MySpringApplication.run(BootApplication.class, args);
+    }
+
+}
+~~~
+
+~~~java
+@Configuration
+@ComponentScan
+public class BootApplication {
+
+    @Bean
+    public ServletWebServerFactory servletWebServerFactory() {
+        return new TomcatServletWebServerFactory();
+    }
+
+    @Bean
+    DispatcherServlet dispatcherServlet() {
+        return new DispatcherServlet();
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(BootApplication.class, args);
+    }
+
+}
+~~~
+
+## DI와 테스트, 디자인 패턴
