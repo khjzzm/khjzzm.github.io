@@ -761,3 +761,87 @@ public class BootApplication {
 ~~~
 
 ## DI와 테스트, 디자인 패턴
+
+### 테스트 코드를 이용한 테스트
+~~~java
+public class HelloApiTest {
+    @Test
+    void helloApi() {
+        TestRestTemplate rest = new TestRestTemplate();
+
+        ResponseEntity<String> res =
+                rest.getForEntity("http://localhost:8080/hello?name={name}", String.class, "Spring");
+
+        // status 200
+        Assertions.assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // header(content-type) text/plain
+        Assertions.assertThat(res.getHeaders().getFirst(HttpHeaders.CONTENT_TYPE)).startsWith(MediaType.TEXT_PLAIN_VALUE);
+
+        // body Hello Spring
+        Assertions.assertThat(res.getBody()).isEqualTo("Hello Spring");
+    }
+}
+~~~
+
+### DI와 단위테스트
+~~~java
+class HelloServiceTest {
+    @Test
+    void simpleHelloService() {
+        SimpleHelloService helloService = new SimpleHelloService();
+
+        String ret = helloService.sayHello("Test");
+
+        assertThat(ret).isEqualTo("Hello Test");
+    }
+}
+~~~
+
+~~~java
+@RestController
+public class HelloController {
+    private final HelloService helloService;
+
+    public HelloController(HelloService helloService) {
+        this.helloService = helloService;   // 인터페이스지만 스프링이 알아서 컨테이너 뒤져서 알아서 구현체 찾아서 넣어줌.
+    }
+
+    @GetMapping("/hello")
+    public String hello(String name) {
+        if (name == null || name.trim().length() == 0) throw new IllegalArgumentException();
+
+        return helloService.sayHello(name);
+    }
+}
+~~~
+
+~~~java
+class HelloControllerTest {
+    @Test
+    void helloController() {
+        HelloController helloController = new HelloController(name -> name); //Lambda
+
+        String ret = helloController.hello("Test");
+
+        assertThat(ret).isEqualTo("Test");
+    }
+
+    @Test
+    void failsHelloController() {
+        HelloController helloController = new HelloController(name -> name);
+
+        assertThatThrownBy(() -> {
+            String ret = helloController.hello(null);
+        }).isInstanceOf(IllegalArgumentException.class);
+
+        assertThatThrownBy(() -> {
+            String ret = helloController.hello("");
+        }).isInstanceOf(IllegalArgumentException.class);
+
+    }
+}
+~~~
+
+
+### DI를 이용한 Decorator, Proxy 패턴
