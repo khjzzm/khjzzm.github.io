@@ -845,3 +845,46 @@ class HelloControllerTest {
 
 
 ### DI를 이용한 Decorator, Proxy 패턴
+~~~java
+package com.nahwasa.practice.tobyspringboot;
+
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Service;
+
+@Service
+@Primary
+public class HelloDecorator implements HelloService {
+    private final HelloService helloService;
+
+    public HelloDecorator(HelloService helloService) {
+        this.helloService = helloService;
+    }
+
+    @Override
+    public String sayHello(String name) {
+        return "*" + helloService.sayHello(name) + "*";
+    }
+}
+~~~
+
+~~~java
+class HelloServiceTest {
+    @Test
+    void simpleHelloService() {
+        SimpleHelloService helloService = new SimpleHelloService();
+
+        String ret = helloService.sayHello("Test");
+
+        assertThat(ret).isEqualTo("Hello Test");
+    }
+
+    @Test
+    void helloDecorator() {
+        HelloDecorator helloService = new HelloDecorator(name -> name);
+
+        String ret = helloService.sayHello("Test");
+
+        assertThat(ret).isEqualTo("*Test*");
+    }
+}
+~~~
