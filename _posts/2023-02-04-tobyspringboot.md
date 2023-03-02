@@ -201,6 +201,25 @@ http -v :8080/hello
 ~~~
 
 ### 서블릿 요청 처리
+~~~java
+public class Application {
+    public static void main(String[] args) {
+        ServletWebServerFactory serverFactory = new TomcatServletWebServerFactory();
+        WebServer webServer = serverFactory.getWebServer(servletContext -> {
+            servletContext.addServlet("hello", new HttpServlet() {
+                @Override
+                protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+                    String name = req.getParameter("name");
+                    resp.setStatus(HttpStatus.OK.value());
+                    resp.setHeader(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_PLAIN_VALUE);
+                    resp.getWriter().println("Hello "+ name);
+                }
+            }).addMapping("/hello");
+        });
+        webServer.start();
+    }
+}
+~~~
 
 ~~~java
 public class BootApplication {
@@ -843,7 +862,6 @@ class HelloControllerTest {
 }
 ~~~
 
-
 ### DI를 이용한 Decorator, Proxy 패턴
 ~~~java
 package com.nahwasa.practice.tobyspringboot;
@@ -888,3 +906,147 @@ class HelloServiceTest {
     }
 }
 ~~~
+
+
+## 자동 구성 기반 애플리케이션
+### 메타 애노테이션과 합성 애노테이션
+**합성 애노테이션** `@RestController` = `@Controller` + `@ResponseBody`
+
+### 합성 애노테이션 적용
+~~~java
+package tobyspring.helloboot;
+
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Configuration;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Configuration
+@ComponentScan
+public @interface MySpringBootApplication {
+}
+~~~
+
+~~~java
+@Configuration
+public class Config {
+    @Bean
+    public ServletWebServerFactory servletWebServerFactory() {
+        return new TomcatServletWebServerFactory();
+    }
+
+    @Bean
+    public DispatcherServlet dispatcherServlet() {
+        return new DispatcherServlet();
+    }
+}
+~~~
+
+~~~java
+@MySpringBootApplication
+public class HellobootApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(HellobootApplication.class, args);
+    }
+
+}
+~~~
+
+### 빈 오브젝트 역할과 구분
+1. 애플리케이션 빈
+   - 개발자가 어떤빈을 사용할지 명시적으로 구성정보를 제공한것
+2. 컨테이너 인프라스트럭처 빈
+   - ApplicationContext/BeanFactory, Environment, BeanPostProcessor, BeanFactoryPostProcessor, DefaultAdvisorAutoProxyCreator...
+
+애플리케이션 빈은 `애플리케이션 로직빈`, `애플리케이션 인프라스터럭쳐 빈`으로 나눌수 있다.
+애플리케이션 인프라스터럭쳐 빈 예로 DataSource, JpaEntityManagerFactory...등이 있다.
+
+- 애플리케이션 로직빈 = 사용자 구성정보(ComponentScan)
+
+- 애플리케이션 인프라스터럭쳐 빈 = 자동 구성정보(AutoConfiguration)
+TomcatServletWebServerFactory, DispatcherServlet
+
+### 인프라 빈 구성 정보의 분리
+
+~~~java
+@Configuration
+public class DispatcherServletConfig {
+    @Bean
+    public DispatcherServlet dispatcherServlet() {
+        return new DispatcherServlet();
+    }
+}
+~~~
+
+~~~java
+@Configuration
+public class TomcatWebServerConfig {
+    @Bean
+    public ServletWebServerFactory servletWebServerFactory() {
+        return new TomcatServletWebServerFactory();
+    }
+}
+~~~
+
+~~~java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Import({DispatcherServletConfig.class, TomcatWebServerConfig.class})
+public @interface EnableMyAutoConfiguration {
+}
+~~~
+
+~~~java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Configuration
+@ComponentScan
+@EnableMyAutoConfiguration
+public @interface MySpringBootApplication {
+}
+~~~
+
+### 동적인 자동 구성 정보 등록
+~~~java
+package tobyspring.config;
+
+import org.springframework.context.annotation.Import;
+import tobyspring.config.autoconfig.DispatcherServletConfig;
+import tobyspring.config.autoconfig.TomcatWebServerConfig;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Import(MyAutoConfigImportSelector.class)
+public @interface EnableMyAutoConfiguration {
+}
+~~~
+
+~~~java
+package tobyspring.config;
+
+import org.springframework.context.annotation.DeferredImportSelector;
+import org.springframework.core.type.AnnotationMetadata;
+
+public class MyAutoConfigImportSelector implements DeferredImportSelector {
+    @Override
+    public String[] selectImports(AnnotationMetadata importingClassMetadata) {
+        return new String[] {
+                "tobyspring.config.autoconfig.DispatcherServletConfig",
+                "tobyspring.config.autoconfig.TomcatWebServerConfig"
+        };
+    }
+}
+~~~
+
+### 자동 구성 정보 파일 분리
