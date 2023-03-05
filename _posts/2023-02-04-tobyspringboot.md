@@ -1050,3 +1050,43 @@ public class MyAutoConfigImportSelector implements DeferredImportSelector {
 ~~~
 
 ### 자동 구성 정보 파일 분리
+~~~java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Configuration
+public @interface MyAutoConfiguration {
+}
+~~~
+
+~~~java
+public class MyAutoConfigImportSelector implements DeferredImportSelector {
+    private final ClassLoader classLoader;
+
+    public MyAutoConfigImportSelector(ClassLoader classLoader) {
+        this.classLoader = classLoader;
+    }
+
+    @Override
+    public String[] selectImports(AnnotationMetadata importingClassMetadata) {
+        List<String> autoConfigs = new ArrayList<>();
+        ImportCandidates.load(MyAutoConfiguration.class, classLoader).forEach(autoConfigs::add);
+
+//        위와 동일
+//        ImportCandidates.load(MyAutoConfiguration.class, classLoader).forEach(candidate ->
+//                autoConfigs.add(candidate)
+//        );
+
+        return autoConfigs.toArray(new String[0]);
+//        위와 동일
+//        return autoConfigs.stream().toArray(String[]::new);
+    }
+}
+~~~
+
+resources/META-INF/spring/com.nahwasa.practice.config.MyAutoConfiguration.imports
+~~~imports
+com.nahwasa.practice.config.autoconfig.DispatcherServletConfig
+com.nahwasa.practice.config.autoconfig.TomcatWebServerConfig
+~~~
+
+### 자동 구성 애노테이션 적용
