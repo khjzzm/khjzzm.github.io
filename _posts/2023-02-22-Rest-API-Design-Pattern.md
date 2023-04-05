@@ -146,6 +146,29 @@ API 리소스를 모델링할 때, 기본적인 리소스 원형 몇 개를 가�
 
 
 **규칙: 도큐먼트 이름으로는 단수 명사를 사용해야 한다**
+- http://api.soccer.restapi.org/leagues/seattle/teams/trebuchet/players/claudio
 
+**규칙: 컬렉션 이름으로는 복수 명사를 사용해야 한다**
+- http://api.soccer.restapi.org/leagues/seattle/teams/trebuchet/players
 
-****
+**규칙: 스토어 이름으로는 복수 명사를 사용해야 한다**
+- http://api.music.restapi.org/artists/mikemassedotcom/playlists
+
+**규칙: 컨트롤러 이름으로는 동사나 동사구를 사용해야 한다**
+프로그램에 사용하는 함수처럼, 컨트롤 리소스를 나타내는 URI는 동작을 포함하는 이름으로 지어야 한다. 예를 들면 다음과 같이 짓는다.
+- http://api.college.restapi.org/students/morgan/register
+- http://api.example.restapi.org/lists/4324/dedupe 
+- http://api.ognom.restapi.org/dbs/reindex 
+- http://api.build.restapi.org/qa/nightly/runTestSuite
+
+**규칙: 경로 부분 중 변하는 부분은 유일한 값으로 대체한다**
+- REST API의 클라이언트에서는 URI가 하나의 유의미한 리소스 식별자임을 고 려해야 한다. 백엔드 시스템의 식별자(이를 테면, 데이터베이스의 ID와 같은)가 URI 경로에 표시될 수 있지만, 이는 클라이언트 코드 입장에서는 별로 의미가 없 다. URI를 유일한 ID로 사용해야만 기존 클라이언트에 영향을 미치지 않고, REST API의 백엔드 시스템을 개선할 수 있다.
+
+**규칙: CRUD 기능을 나타내는 것은 URI에 사용하지 않는다**
+- URI는 리소스를 식별하 는 데만 사용해야 하고, 위에서 설명한 내용을 바탕으로 설계되어야 한다
+
+### 2.7 URI Query 디자인
+RFC 3986에서 URI 쿼리 는 선택사항이고 경로와 다른 선택사항인 프래그먼트fragment 사이에 온다.
+
+URI = scheme “://” authority “/” path [ “?” query ] [ “#” fragment ]
+
