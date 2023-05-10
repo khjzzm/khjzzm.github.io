@@ -106,5 +106,45 @@ Configuration 이라는 단어는 구성, 배치라는 뜻도 있다.
 [@자동구성 직접만들기 github](https://github.com/khjzzm/yeoboya-lunch/tree/45bda96ab2e421921fe2c3ecf8ede8efe3a280c6)
 
 
+## 순수 라이브러리 만들기
+
+`@AutoConfiguration` 을 이해하기 위해서는 그 전에 먼저 라이브러리가 어떻게 사용되는지 이해하는 것이 필요하다.
+여러분이 만든 실시간 자바 Memory 조회 기능이 좋다고 소문이 나서, 여러 프로젝트에서 사용하고 싶어한다. 이 기능을 여러곳에서 사용할 수 있도록 라이브러리로 만들어보자.
+참고로 라이브러리를 만들 때는 스프링 부트 플러그인 기능을 사용하지 않고 진행한다.
 
 
+**빌드하기**
+- 다음 명령어로 빌드하자. 
+  - ./gradlew clean build
+- 빌드 결과
+  - build/libs/memory-v1.jar
+- 다음 명령어를 사용해서 압축을 풀어서 내용을 확인해보자. 
+  - jar -xvf memory-v1.jar
+
+**JAR를 푼 결과**
+META-INF
+- MANIFEST.MF
+memory
+- MemoryFinder.class
+- MemoryController.class
+- Memory.class
+
+memory-v1.jar 는 스스로 동작하지는 못하고 다른 곳에 포함되어서 동작하는 라이브러리이다. 이제 이 라이브러리를 다른 곳에서 사용해보자.
+
+~~~gradle
+dependencies {
+      implementation files('libs/memory-v1.jar') //추가
+      implementation 'org.springframework.boot:spring-boot-starter-web'
+      compileOnly 'org.projectlombok:lombok'
+      annotationProcessor 'org.projectlombok:lombok'
+      testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+~~~
+
+**정리** ㅡ
+- 외부 라이브러리를 직접 만들고 또 그것을 프로젝트에 라이브러리로 불러서 적용해보았다.
+- 그런데 라이브러리를 사용하는 클라이언트 개발자 입장을 생각해보면, 라이브러리 내부에 있는 어떤 빈을 등록해야하는지 알아야 하고, 그것을 또 하나하나 빈으로 등록해야 한다. 지금처럼 간단한 라이브러리가 아니라 초기 설정이 복잡하다면 사용자 입장에서는 상당히 귀찮은 작업이 될 수 있다.
+- 이런 부분을 자동으로 처리해주는 것이 바로 스프링 부트 자동 구성(Auto Configuration)이다.
+
+
+## 자동 구성 라이브러리 만들기
