@@ -148,3 +148,107 @@ dependencies {
 
 
 ## 자동 구성 라이브러리 만들기
+
+
+## 자동 구성 이해 1 - 스프링 부트의 동작
+스프링 부트는 다음 경로에 있는 파일을 읽어서 스프링 부트 자동 구성으로 사용한다.
+```
+resources/META-INF/spring/ org.springframework.boot.autoconfigure.AutoConfiguration.imports
+```
+
+spring-boot-autoconfigure - org.springframework.boot.autoconfigure.AutoConfiguration.imports
+```
+org.springframework.boot.autoconfigure.aop.AopAutoConfiguration
+org.springframework.boot.autoconfigure.cache.CacheAutoConfiguration
+org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration
+org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
+org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration
+org.springframework.boot.autoconfigure.dao.PersistenceExceptionTranslationAutoConfiguration
+org.springframework.boot.autoconfigure.data.jdbc.JdbcRepositoriesAutoConfiguration
+org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
+org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
+org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration
+org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration
+org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration
+org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+org.springframework.boot.autoconfigure.thymeleaf.ThymeleafAutoConfiguration
+org.springframework.boot.autoconfigure.transaction.TransactionAutoConfiguration
+org.springframework.boot.autoconfigure.validation.ValidationAutoConfiguration
+org.springframework.boot.autoconfigure.web.servlet.error.ErrorMvcAutoConfiguration
+org.springframework.boot.autoconfigure.web.servlet.HttpEncodingAutoConfiguration
+org.springframework.boot.autoconfigure.web.servlet.MultipartAutoConfiguration
+org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration
+...
+```
+
+스프링 부트 자동 구성이 동작하는 원리는 다음 순서로 확인할 수 있다. 
+`@SpringBootApplication` -> `@EnableAutoConfiguration` -> `@Import(AutoConfigurationImportSelector.class)`
+
+
+**@SpringBootApplication**
+~~~java
+@SpringBootConfiguration
+@EnableAutoConfiguration
+@ComponentScan(excludeFilters = { @Filter(type = FilterType.CUSTOM, classes = TypeExcludeFilter.class), @Filter(type = FilterType.CUSTOM, classes =
+AutoConfigurationExcludeFilter.class) })
+public @interface SpringBootApplication {...}
+~~~
+
+여기서 우리가 주목할 애노테이션은 @EnableAutoConfiguration 이다. 이름 그대로 자동 구성을 활성화 하는 기능을 제공한다.
+
+
+**@EnableAutoConfiguration**
+~~~java
+@AutoConfigurationPackage
+@Import(AutoConfigurationImportSelector.class)
+public @interface EnableAutoConfiguration {...}
+~~~
+@Import 는 주로 스프링 설정 정보( @Configuration )를 포함할 때 사용한다.
+그런데 AutoConfigurationImportSelector 를 열어보면 @Configuration 이 아니다.
+
+## 자동 구성 이해2 - ImportSelector
+@Import 에 설정 정보를 추가하는 방법은 2가지가 있다.
+- 정적인 방법: @Import (클래스) 이것은 정적이다. 코드에 대상이 딱 박혀 있다. 설정으로 사용할 대상을 동적으로 변경할 수 없다.
+- 동적인 방법: @Import ( ImportSelector ) 코드로 프로그래밍해서 설정으로 사용할 대상을 동적으로 선택할 수 있다.
+
+**정적인 방법**
+스프링에서 다른 설정 정보를 추가하고 싶으면 다음과 같이 @Import 를 사용하면 된다.
+~~~java
+  @Configuration
+  @Import({AConfig.class, BConfig.class})
+  public class AppConfig {...}
+~~~
+그런데 예제처럼 AConfig , BConfig 가 코드에 딱 정해진 것이 아니라, 특정 조건에 따라서 설정 정보를 선택해야 하는 경우에는 어떻게 해야할까?
+
+
+**동적인 방법**
+스프링은 설정 정보 대상을 동적으로 선택할 수 있는 ImportSelector 인터페이스를 제공한다.
+
+~~~java
+package org.springframework.context.annotation;
+public interface ImportSelector {
+  String[] selectImports(AnnotationMetadata importingClassMetadata);
+//...
+}
+~~~
+
+스프링 부트 자동 구성이 동작하는 원리는 다음 순서로 확인할 수 있다.
+`@SpringBootApplication` -> `@EnableAutoConfiguration` -> `@Import(AutoConfigurationImportSelector.class)`
+-> `resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 파일을 열어서 설정 정보 선택 해당 파일의 설정 정보가 스프링 컨테이너에 등록되고 사용
+
+
+## 정리
+스프링 부트의 자동 구성을 직접 만들어서 사용할 때는 다음을 참고하자.
+- @AutoConfiguration 에 자동 구성의 순서를 지정할 수 있다.
+- @AutoConfiguration 도 설정 파일이다. 내부에 @Configuration 이 있는 것을 확인할 수 있다. 하지만 일반 스프링 설정과 라이프사이클이 다르기 때문에 컴포넌트 스캔의 대상이 되면 안된다.
+- 파일에 지정해서 사용해야 한다.
+- 그래서 스프링 부트가 제공하는 컴포넌트 스캔에서는 @AutoConfiguration 을 제외하는 AutoConfigurationExcludeFilter 필터가 포함되어 있다.
+
+## 자동 구성을 언제 사용하는가?
+- AutoConfiguration 은 라이브러리를 만들어서 제공할 때 사용하고, 그 외에는 사용하는 일이 거의 없다. 왜냐하면 보통 필요한 빈들을 컴포넌트 스캔하거나 직접 등록하기 때문이다. 하지만 라이브러리를 만들어서 제공할 때는 자동 구성이 유용하다. 실제로 다양한 외부 라이브러리들이 자동 구성을 함께 제공한다.
+- 보통 이미 만들어진 라이브러리를 가져다 사용하지, 반대로 라이브러리를 만들어서 제공하는 경우는 매우 드물다. 그럼 자동 구성은 왜 알아두어야 할까?
+- 자동 구성을 알아야 하는 진짜 이유는 개발을 진행 하다보면 사용하는 특정 빈들이 어떻게 등록된 것인지 확인이 필요할 때가 있다. 이럴 때 스프링 부트의 자동 구성 코드를 읽을 수 있어야 한다. 그래야 문제가 발생했을 때 대처가 가능하다. 자동화는 매우 편리한 기능이지만 자동화만 믿고 있다가 실무에서 문제가 발생했을 때는 파고 들어가서 문제를 확인하는 정도는 이해해야 한다. 이번에 학습한 정도면 자동 구성 코드를 읽는데 큰 어려움은 없을 것이다.
+ 
