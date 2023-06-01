@@ -1,254 +1,337 @@
 ---
 layout: post
-title: Spring Boot Auto Configuration
+title: Spring Boot Externalized Configuration
 ---
 
+## OS 환경 변수
 
-## 스프링 부트의 자동 구성
-스프링 부트는 자동 구성(Auto Configuration)이라는 기능을 제공하는데, 일반적으로 자주 사용하는 수 많은 빈들을 자동으로 등록해주는 기능이다.
-앞서 우리가 살펴보았던 JdbcTemplate , DataSource , TransactionManager 모두 스프링 부트가 자동 구성을 제공해서 자동으로 스프링 빈으로 등록된다.
+OS 환경 변수(OS environment variables)는 해당 OS를 사용하는 모든 프로그램에서 읽을 수 있는
+설정값이다. 한마디로 다른 외부 설정과 비교해서 사용 범위가 가장 넓다.
 
-이러한 자동 구성 덕분에 개발자는 반복적이고 복잡한 빈 등록과 설정을 최소화 하고 애플리케이션 개발을 빠르게 시작할 수 있다.
+조회 방법
 
-스프링 부트는 `spring-boot-autoconfigure` 라는 프로젝트 안에서 수 많은 자동 구성을 제공한다. JdbcTemplate 을 설정하고 빈으로 등록해주는 자동 구성을 확인해보자.
+- 윈도우 OS: set
+- MAC, 리눅스 OS: printenv
 
-### JdbcTemplateAutoConfiguration
 ~~~java
-package org.springframework.boot.autoconfigure.jdbc;
-  import javax.sql.DataSource;
-  import org.springframework.boot.autoconfigure.AutoConfiguration;
-  import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-  import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
-  import org.springframework.boot.autoconfigure.condition.ConditionalOnSingleCandidate;
-  import org.springframework.boot.context.properties.EnableConfigurationProperties;
-  import org.springframework.boot.sql.init.dependency.DatabaseInitializationDependencyConfigurer;
-  import org.springframework.context.annotation.Import;
-  import org.springframework.jdbc.core.JdbcTemplate;
-  import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-  @AutoConfiguration(after = DataSourceAutoConfiguration.class)
-  @ConditionalOnClass({ DataSource.class, JdbcTemplate.class })
-  @ConditionalOnSingleCandidate(DataSource.class)
-  @EnableConfigurationProperties(JdbcProperties.class)
-  @Import({ DatabaseInitializationDependencyConfigurer.class,
-  JdbcTemplateConfiguration.class,
-        NamedParameterJdbcTemplateConfiguration.class })
-  public class JdbcTemplateAutoConfiguration {
+package hello.external;
+
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Map;
+
+@Slf4j
+public class OsEnv {
+    public static void main(String[] args) {
+        Map<String, String> envMap = System.getenv();
+        for (String key : envMap.keySet()) {
+            log.info("env {}={}", key, System.getenv(key));
+        }
+    }
+    //DBURL = dev.db.com    //개발서버
+    //DBURL = prod.db.com   //운영서버
 }
 ~~~
 
-- @AutoConfiguration : 자동 구성을 사용하려면 이 애노테이션을 등록해야 한다.
-  - 자동 구성도 내부에 @Configuration 이 있어서 빈을 등록하는 자바 설정 파일로 사용할 수 있다.
-  - after = DataSourceAutoConfiguration.class
-    - 자동 구성이 실행되는 순서를 지정할 수 있다. JdbcTemplate 은 DataSource 가 필요하기 때문에 DataSource 를 자동으로 등록해주는 DataSourceAutoConfiguration 다음에 실행하도록 설정되어 있다.
-  - @ConditionalOnClass({ DataSource.class, JdbcTemplate.class })
-    - IF문과 유사한 기능을 제공한다. 이런 클래스가 있는 경우에만 설정이 동작한다. 만약 없으면 여기 있는 설정들이 모두 무효화 되고, 빈도 등록되지 않는다.
-    - @ConditionalXxx 시리즈가 있다. 자동 구성의 핵심이므로 뒤에서 자세히 알아본다.
-    - JdbcTemplate 은 DataSource , JdbcTemplate 라는 클래스가 있어야 동작할 수 있다.
-  - @Import : 스프링에서 자바 설정을 추가할 때 사용한다.
+하지만 OS 환경 변수는 이 프로그램 뿐만 아니라 다른 프로그램에서도 사용할 수 있다. 쉽게 이야기해서 전역 변수 같은 효과가 있다. 여러 프로그램에서 사용하는 것이 맞을 때도 있지만,
+해당 애플리케이션을 사용하는 자바 프로그램 안에서만 사용되는 외부 설정값을 사용하고 싶을 때도 있다. 다음에는 특정 자바 프로그램안에서 사용하는 외부 설정을 알아보자.
 
+## 자바 시스템 속성
 
-### JdbcTemplateConfiguration
+자바 시스템 속성(Java System properties)은 실행한 JVM 안에서 접근 가능한 외부 설정이다. 추가로
+자바가 내부에서 미리 설정해두고 사용하는 속성들도 있다.
+
+자바 시스템 속성은 다음과 같이 자바 프로그램을 실행할 때 사용한다.
+
+- 예) java -Durl=dev -jar app.jar
+- -D VM 옵션을 통해서 key=value 형식을 주면 된다.
+- 이 예제는 url=dev 속성이 추가된다. 순서에 주의해야 한다. -D 옵션이 -jar 보다 앞에 있다.
+
 ~~~java
- @Configuration(proxyBeanMethods = false)
-  @ConditionalOnMissingBean(JdbcOperations.class)
-  class JdbcTemplateConfiguration {
-    @Bean
-    @Primary
-    JdbcTemplate jdbcTemplate(DataSource dataSource, JdbcProperties properties) {
-        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-        JdbcProperties.Template template = properties.getTemplate();
-        jdbcTemplate.setFetchSize(template.getFetchSize());
-        jdbcTemplate.setMaxRows(template.getMaxRows());
-        if (template.getQueryTimeout() != null) {
-            jdbcTemplate.setQueryTimeout((int)
-                    template.getQueryTimeout().getSeconds());
+package hello.external;
+
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Properties;
+
+@Slf4j
+public class JavaSystemProperties {
+    public static void main(String[] args) {
+        Properties properties = System.getProperties();
+        for (Object key : properties.keySet()) {
+            log.info("prop {}={}", key, System.getProperty(String.valueOf(key)));
         }
-        return jdbcTemplate;
     }
 }
 ~~~
-- @Configuration : 자바 설정 파일로 사용된다. @ConditionalOnMissingBean(JdbcOperations.class)
-- JdbcOperations 빈이 없을 때 동작한다.
-  - JdbcTemplate 의 부모 인터페이스가 바로 JdbcOperations 이다.
-  - 쉽게 이야기해서 JdbcTemplate 이 빈으로 등록되어 있지 않은 경우에만 동작한다.
-  - 만약 이런 기능이 없으면 내가 등록한 JdbcTemplate 과 자동 구성이 등록하는 JdbcTemplate 이 중복 등록되는 문제가 발생할 수 있다.
-  - 보통 개발자가 직접 빈을 등록하면 개발자가 등록한 빈을 사용하고, 자동 구성은 동작하지 않는다.
-- JdbcTemplate 이 몇가지 설정을 거쳐서 빈으로 등록되는 것을 확인할 수 있다.
 
-자동 등록 설정
-다음과 같은 자동 구성 기능들이 다음 빈들을 등록해준다.
-- JdbcTemplateAutoConfiguration : JdbcTemplate
-- DataSourceAutoConfiguration : DataSource 
-- DataSourceTransactionManagerAutoConfiguration : TransactionManager   
-그래서 개발자가 직접 빈을 등록하지 않아도 JdbcTemplate , DataSource , TransactionManager 가 스프링 빈으로 등록된 것이다.
+JavaSystemProperties - 추가
 
-[스프링 부트가 제공하는 자동 구성(AutoConfiguration)](https://docs.spring.io/spring-boot/docs/current/reference/html/auto-configuration-classes.html)
+~~~java
+package hello.external;
 
+import lombok.extern.slf4j.Slf4j;
 
-**자동 설정**
-Configuration 이라는 단어가 컴퓨터 용어에서는 환경 설정, 설정이라는 뜻으로 자주 사용된다. Auto Configuration은 크게 보면 빈들을 자동으로 등록해서 스프링이 동작하는 환경을 자동으로 설정해주기 때문에 자동 설정이라는 용어도 맞다.
+import java.util.Properties;
 
-**자동 구성**
-Configuration 이라는 단어는 구성, 배치라는 뜻도 있다.
-예를 들어서 컴퓨터라고 하면 CPU, 메모리등을 배치해야 컴퓨터가 동작한다. 이렇게 배치하는 것을 구성이라 한다.
-스프링도 스프링 실행에 필요한 빈들을 적절하게 배치해야 한다. 자동 구성은 스프링 실행에 필요한 빈들을 자동으로 배치해주는 것이다.
+@Slf4j
+public class JavaSystemProperties {
+    public static void main(String[] args) {
+        Properties properties = System.getProperties();
+        for (Object key : properties.keySet()) {
+            log.info("prop {}={}", key,
+                    System.getProperty(String.valueOf(key)));
+        }
+        String url = System.getProperty("url");
+        String username = System.getProperty("username");
+        String password = System.getProperty("password");
+        log.info("url={}", url);
+        log.info("username={}", username);
+        log.info("password={}", password);
+    }
+}
+~~~
 
-자동 설정, 자동 구성 두 용어 모두 맞는 말이다. 자동 설정은 넓게 사용되는 의미이고, 자동 구성은 실행에 필요한 컴포넌트 조각을 자동으로 배치한다는 더 좁은 의미에 가깝다.
+-Durl=devdb -Dusername=dev_user -Dpassword=dev_pw
 
-- Auto Configuration은 자동 구성이라는 단어를 주로 사용하고, 문맥에 따라서 자동 설정이라는 단어도 사용하겠다.
-- Configuration이 단독으로 사용될 때는 설정이라는 단어를 사용하겠다.
+- Jar 실행
+  jar로 빌드되어 있다면 실행시 다음과 같이 자바 시스템 속성을 추가할 수 있다.
+  `java -Durl=devdb -Dusername=dev_user -Dpassword=dev_pw -jar app.jar`
+
+## 커맨드 라인 인수
+
+커맨드 라인 인수(Command line arguments)는 애플리케이션 실행 시점에 외부 설정값을 main(args) 메서드의 args 파라미터로 전달하는 방법이다.
+
+다음과 같이 사용한다.
+
+- 예) java -jar app.jar dataA dataB
+- 필요한 데이터를 마지막 위치에 스페이스로 구분해서 전달하면 된다. 이 경우 dataA , dataB 2개의 문자가 args 에 전달된다.
+
+## 커맨드 라인 옵션 인수
+
+일반적인 커맨드 라인 인수
+커맨드 라인에 전달하는 값은 형식이 없고, 단순히 띄어쓰기로 구분한다.
+
+- aaa bbb [aaa, bbb] 값 2개
+- hello world [hello, world] 값 2개
+- "hello world" [hello world] (공백을 연결하려면 " 를 사용하면 된다.) 값 1개
+- key=value [key=value] 값 1개
+
+**커맨드 라인 옵션 인수(command line option arguments)**
+커맨드 라인 인수를 key=value 형식으로 구분하는 방법이 필요하다. 그래서 스프링에서는 커맨드 라인 인수를 key=value 형식으로 편리하게 사용할 수 있도록 스프링 만의 표준 방식을 정의했는데, 그것이 바로
+커맨드 라인 옵션 인수이다.
+
+스프링은 커맨드 라인에 -(dash) 2개( -- )를 연결해서 시작하면 key=value 형식으로 정하고 이것을 커맨드 라인 옵션 인수라 한다.
+
+- --key=value 형식으로 사용한다.
+- --username=userA --username=userB 하나의 키에 여러 값도 지정할 수 있다
+
+~~~java
+package hello.external;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.DefaultApplicationArguments;
+
+import java.util.List;
+import java.util.Set;
+
+@Slf4j
+public class CommandLineV2 {
+    public static void main(String[] args) {
+        for (String arg : args) {
+            log.info("arg {}", arg);
+        }
+        ApplicationArguments appArgs = new DefaultApplicationArguments(args);
+        log.info("SourceArgs = {}", List.of(appArgs.getSourceArgs()));
+        log.info("NonOptionArgs = {}", appArgs.getNonOptionArgs());
+        log.info("OptionNames = {}", appArgs.getOptionNames());
+        Set<String> optionNames = appArgs.getOptionNames();
+        for (String optionName : optionNames) {
+            log.info("option args {}={}", optionName,
+                    appArgs.getOptionValues(optionName));
+        }
+        List<String> url = appArgs.getOptionValues("url");
+        List<String> username = appArgs.getOptionValues("username");
+        List<String> password = appArgs.getOptionValues("password");
+        List<String> mode = appArgs.getOptionValues("mode");
+        log.info("url={}", url);
+        log.info("username={}", username);
+        log.info("password={}", password);
+        log.info("mode={}", mode);
+    }
+}
+~~~
+
+**실행**
+커맨드 라인 인수를 다음과 같이 입력하고 실행해보자
+`--url=devdb --username=dev_user --password=dev_pw mode=on`
+이해를 돕기 위해 -- (dash)가 없는 mode=on 이라는 옵션도 마지막에 추가했다.
+
+여기서 커맨드 라인 옵션 인수와, 옵션 인수가 아닌 것을 구분할 수 있다.
+
+**옵션 인수**
+
+- -- 로 시작한다.
+- --url=devdb
+- --username=dev_user
+- --password=dev_pw
+
+**옵션 인수가 아님**
+
+- -- 로 시작하지 않는다. mode=on
+
+**실행결과**
+
+~~~
+arg --url=devdb
+arg --username=dev_user
+arg --password=dev_pw
+arg mode=on
+SourceArgs = [--url=devdb, --username=dev_user, --password=dev_pw, mode=on]
+NonOptionArgs = [mode=on]
+OptionNames = [password, url, username]
+option args password=[dev_pw]
+option args url=[devdb]
+option args username=[dev_user]
+url=[devdb]
+username=[dev_user]
+password=[dev_pw]
+mode=null
+~~~
+
+참고
+
+- 참고로 옵션 인수는 --username=userA --username=userB 처럼 하나의 키에 여러 값을 포함할 수 있기 때문에 appArgs.getOptionValues(key) 의 결과는 리스트(
+  List )를 반환한다.
+- 커맨드 라인 옵션 인수는 자바 언어의 표준 기능이 아니다. 스프링이 편리함을 위해 제공하는 기능이다.
+
+## 커맨드 라인 옵션 인수와 스프링 부트
+
+스프링 부트는 커맨드 라인을 포함해서 커맨드 라인 옵션 인수를 활용할 수 있는 ApplicationArguments 를 스프링 빈으로 등록해둔다.
+그리고 그 안에 입력한 커맨드 라인을 저장해둔다. 그래서 해당 빈을 주입 받으면 커맨드 라인으로 입력한 값을 어디서든 사용할 수 있다.
+
+~~~java
+package hello;
+
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Set;
+
+@Slf4j
+@Component
+public class CommandLineBean {
+    private final ApplicationArguments arguments;
+
+    public CommandLineBean(ApplicationArguments arguments) {
+        this.arguments = arguments;
+    }
+
+    @PostConstruct
+    public void init() {
+        log.info("source {}", List.of(arguments.getSourceArgs()));
+        log.info("optionNames {}", arguments.getOptionNames());
+        Set<String> optionNames = arguments.getOptionNames();
+        for (String optionName : optionNames) {
+            log.info("option args {}={}", optionName, arguments.getOptionValues(optionName));
+        }
+    }
+}
+~~~
+
+## 외부 설정 - 스프링 통합
+
+외부 설정값이 어디에 위치하든 상관없이 일관성 있고, 편리하게 key=value 형식의 외부 설정값을 읽을 수 있으면 사용하는 개발자 입장에서 더 편리하고
+또 외부 설정값을 설정하는 방법도 더 유연해질 수 있다. 예를 들어서 외부 설정값을 OS 환경변수를 사용하다가 자바 시스템 속성으로 변경하는 경우에
+소스코드를 다시 빌드하지 않고 그대로 사용할 수 있다.
+
+스프링은 이 문제를 `Environment` 와 `PropertySource` 라는 추상화를 통해서 해결한다.
+
+**PropertySource**
+
+- org.springframework.core.env.PropertySource
+- 스프링은 PropertySource 라는 추상 클래스를 제공하고, 각각의 외부 설정를 조회하는 XxxPropertySource 구현체를 만들어두었다.
+    - CommandLinePropertySource
+    - SystemEnvironmentPropertySource
+- 스프링은 로딩 시점에 필요한 PropertySource 들을 생성하고, Environment 에서 사용할 수 있게 연결해둔다.
+
+**Environment**
+
+- org.springframework.core.env.Environment
+- Environment 를 통해서 특정 외부 설정에 종속되지 않고, 일관성 있게 key=value 형식의 외부 설정에 접근할 수 있다.
+    - environment.getProperty(key) 를 통해서 값을 조회할 수 있다.
+    - Environment 는 내부에서 여러 과정을 거쳐서 PropertySource 들에 접근한다.
+    - 같은 값이 있을 경우를 대비해서 스프링은 미리 우선순위를 정해두었다. (뒤에서 설명한다.)
+- 모든 외부 설정은 이제 `Environment` 를 통해서 조회하면 된다.
+
+**설정 데이터(파일)**
+여기에 우리가 잘 아는 application.properties, application.yml 도 PropertySource에 추가된다.
+따라서 Environment 를 통해서 접근할 수 있다.
+
+~~~java
+package hello;
+
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
+import org.springframework.stereotype.Component;
+
+@Slf4j
+@Component
+public class EnvironmentCheck {
+    private final Environment env;
+
+    public EnvironmentCheck(Environment env) {
+        this.env = env;
+    }
+
+    @PostConstruct
+    public void init() {
+        String url = env.getProperty("url");
+        String username = env.getProperty("username");
+        String password = env.getProperty("password");
+        log.info("env url={}", url);
+        log.info("env username={}", username);
+        log.info("env password={}", password);
+    }
+}
+~~~
+**커맨드 라인 옵션 인수 실행**
+  - --url=devdb --username=dev_user --password=dev_pw
+
+**자바 시스템 속성 실행**
+  - -Durl=devdb -Dusername=dev_user -Dpassword=dev_pw
 
 **정리**
-스프링 부트가 제공하는 자동 구성 기능을 이해하려면 다음 두 가지 개념을 이해해야 한다.
-- `@Conditional` : 특정 조건에 맞을 때 설정이 동작하도록 한다.
-- `@AutoConfiguration` : 자동 구성이 어떻게 동작하는지 내부 원리 이해
+커맨드라인옵션인수,자바시스템속성모두 Environment 를 통해서 동일한방법 으로 읽을 수 있는 것을 확인했다.
+스프링은 Environment 를 통해서 외부 설정을 읽는 방법을 추상화했다. 덕분에 자바 시스템 속성을 사용하다가 만약 커맨드 라인 옵션 인수를 사용하도록 읽는 방법이 변경되어도, 개발 소스 코드는 전혀 변경하지 않아도 된다.
 
-[@자동구성 직접만들기 github](https://github.com/khjzzm/yeoboya-lunch/tree/45bda96ab2e421921fe2c3ecf8ede8efe3a280c6)
+**우선순위**
+예를 들어서 커맨드 라인 옵션 인수와 자바 시스템 속성을 다음과 같이 중복해서 설정하면 어떻게 될까?
 
-
-## 순수 라이브러리 만들기
-
-`@AutoConfiguration` 을 이해하기 위해서는 그 전에 먼저 라이브러리가 어떻게 사용되는지 이해하는 것이 필요하다.
-여러분이 만든 실시간 자바 Memory 조회 기능이 좋다고 소문이 나서, 여러 프로젝트에서 사용하고 싶어한다. 이 기능을 여러곳에서 사용할 수 있도록 라이브러리로 만들어보자.
-참고로 라이브러리를 만들 때는 스프링 부트 플러그인 기능을 사용하지 않고 진행한다.
-
-
-**빌드하기**
-- 다음 명령어로 빌드하자. 
-  - ./gradlew clean build
-- 빌드 결과
-  - build/libs/memory-v1.jar
-- 다음 명령어를 사용해서 압축을 풀어서 내용을 확인해보자. 
-  - jar -xvf memory-v1.jar
-
-**JAR를 푼 결과**
-META-INF
-- MANIFEST.MF
-memory
-- MemoryFinder.class
-- MemoryController.class
-- Memory.class
-
-memory-v1.jar 는 스스로 동작하지는 못하고 다른 곳에 포함되어서 동작하는 라이브러리이다. 이제 이 라이브러리를 다른 곳에서 사용해보자.
-
-~~~gradle
-dependencies {
-      implementation files('libs/memory-v1.jar') //추가
-      implementation 'org.springframework.boot:spring-boot-starter-web'
-      compileOnly 'org.projectlombok:lombok'
-      annotationProcessor 'org.projectlombok:lombok'
-      testImplementation 'org.springframework.boot:spring-boot-starter-test'
-}
-~~~
-
-**정리** ㅡ
-- 외부 라이브러리를 직접 만들고 또 그것을 프로젝트에 라이브러리로 불러서 적용해보았다.
-- 그런데 라이브러리를 사용하는 클라이언트 개발자 입장을 생각해보면, 라이브러리 내부에 있는 어떤 빈을 등록해야하는지 알아야 하고, 그것을 또 하나하나 빈으로 등록해야 한다. 지금처럼 간단한 라이브러리가 아니라 초기 설정이 복잡하다면 사용자 입장에서는 상당히 귀찮은 작업이 될 수 있다.
-- 이런 부분을 자동으로 처리해주는 것이 바로 스프링 부트 자동 구성(Auto Configuration)이다.
+우선순위는 상식 선에서 딱 2가지만 기억하면 된다.
+더 유연한 것이 우선권을 가진다. (변경하기 어려운 파일 보다 실행시 원하는 값을 줄 수 있는 자바 시스템 속성이 더 우선권을 가진다.)
+범위가 넒은 것 보다 좁은 것이 우선권을 가진다. (자바 시스템 속성은 해당 JVM 안에서 모두 접근할 수있다. 반면에 커맨드라인 옵션인수는 main의 arg를 통해서 들어오기 때문에 접근범위가 더 좁다.)
+자바 시스템 속성과 커맨드 라인 옵션 인수의 경우 커맨드 라인 옵션 인수의 범위가 더 좁기 때문에 커맨드 라인 옵션 인수가 우선권을 가진다.
+우선순위는 뒤에서 더 자세히 다루겠다.
 
 
-## 자동 구성 라이브러리 만들기
+## 설정 데이터1 - 외부파일
+지금까지 학습한 OS 환경 변수, 자바 시스템 속성, 커맨드 라인 옵션 인수는 사용해야 하는 값이 늘어날 수 록 사용하기가 불편해진다. 실무에서는 수십개의 설정값을 사용하기도 하므로 이런 값들을 프로그램을 실행할 때 마다 입력하게 되면 번거롭고, 관리도 어렵다.
 
+그래서 등장하는 대안으로는 설정값을 파일에 넣어서 관리하는 방법이다. 그리고 애플리케이션 로딩 시점에 해당 파일을 읽어들이면 된다. 그 중에서도 .properties 라는 파일은 key=value 형식을 사용해서 설정값을 관리하기에 아주 적합하다.
 
-## 자동 구성 이해 1 - 스프링 부트의 동작
-스프링 부트는 다음 경로에 있는 파일을 읽어서 스프링 부트 자동 구성으로 사용한다.
-```
-resources/META-INF/spring/ org.springframework.boot.autoconfigure.AutoConfiguration.imports
-```
+예를 들면 개발 서버와 운영 서버 각각에 application.properties 라는 같은 이름의 파일을 준비해둔다.
+그리고 애플리케이션 로딩 시점에 해당 파일을 읽어서 그 속에 있는 값들을 외부 설정값으로 사용하면 된다.
+참고로 파일 이름이 같으므로 애플리케이션 코드는 그대로 유지할 수 있다.
 
-spring-boot-autoconfigure - org.springframework.boot.autoconfigure.AutoConfiguration.imports
-```
-org.springframework.boot.autoconfigure.aop.AopAutoConfiguration
-org.springframework.boot.autoconfigure.cache.CacheAutoConfiguration
-org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration
-org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
-org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration
-org.springframework.boot.autoconfigure.dao.PersistenceExceptionTranslationAutoConfiguration
-org.springframework.boot.autoconfigure.data.jdbc.JdbcRepositoriesAutoConfiguration
-org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
-org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
-org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration
-org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration
-org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration
-org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
-org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
-org.springframework.boot.autoconfigure.thymeleaf.ThymeleafAutoConfiguration
-org.springframework.boot.autoconfigure.transaction.TransactionAutoConfiguration
-org.springframework.boot.autoconfigure.validation.ValidationAutoConfiguration
-org.springframework.boot.autoconfigure.web.servlet.error.ErrorMvcAutoConfiguration
-org.springframework.boot.autoconfigure.web.servlet.HttpEncodingAutoConfiguration
-org.springframework.boot.autoconfigure.web.servlet.MultipartAutoConfiguration
-org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration
-...
-```
-
-스프링 부트 자동 구성이 동작하는 원리는 다음 순서로 확인할 수 있다. 
-`@SpringBootApplication` -> `@EnableAutoConfiguration` -> `@Import(AutoConfigurationImportSelector.class)`
-
-
-**@SpringBootApplication**
-~~~java
-@SpringBootConfiguration
-@EnableAutoConfiguration
-@ComponentScan(excludeFilters = { @Filter(type = FilterType.CUSTOM, classes = TypeExcludeFilter.class), @Filter(type = FilterType.CUSTOM, classes =
-AutoConfigurationExcludeFilter.class) })
-public @interface SpringBootApplication {...}
-~~~
-
-여기서 우리가 주목할 애노테이션은 @EnableAutoConfiguration 이다. 이름 그대로 자동 구성을 활성화 하는 기능을 제공한다.
-
-
-**@EnableAutoConfiguration**
-~~~java
-@AutoConfigurationPackage
-@Import(AutoConfigurationImportSelector.class)
-public @interface EnableAutoConfiguration {...}
-~~~
-@Import 는 주로 스프링 설정 정보( @Configuration )를 포함할 때 사용한다.
-그런데 AutoConfigurationImportSelector 를 열어보면 @Configuration 이 아니다.
-
-## 자동 구성 이해2 - ImportSelector
-@Import 에 설정 정보를 추가하는 방법은 2가지가 있다.
-- 정적인 방법: @Import (클래스) 이것은 정적이다. 코드에 대상이 딱 박혀 있다. 설정으로 사용할 대상을 동적으로 변경할 수 없다.
-- 동적인 방법: @Import ( ImportSelector ) 코드로 프로그래밍해서 설정으로 사용할 대상을 동적으로 선택할 수 있다.
-
-**정적인 방법**
-스프링에서 다른 설정 정보를 추가하고 싶으면 다음과 같이 @Import 를 사용하면 된다.
-~~~java
-  @Configuration
-  @Import({AConfig.class, BConfig.class})
-  public class AppConfig {...}
-~~~
-그런데 예제처럼 AConfig , BConfig 가 코드에 딱 정해진 것이 아니라, 특정 조건에 따라서 설정 정보를 선택해야 하는 경우에는 어떻게 해야할까?
-
-
-**동적인 방법**
-스프링은 설정 정보 대상을 동적으로 선택할 수 있는 ImportSelector 인터페이스를 제공한다.
-
-~~~java
-package org.springframework.context.annotation;
-public interface ImportSelector {
-  String[] selectImports(AnnotationMetadata importingClassMetadata);
-//...
-}
-~~~
-
-스프링 부트 자동 구성이 동작하는 원리는 다음 순서로 확인할 수 있다.
-`@SpringBootApplication` -> `@EnableAutoConfiguration` -> `@Import(AutoConfigurationImportSelector.class)`
--> `resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 파일을 열어서 설정 정보 선택 해당 파일의 설정 정보가 스프링 컨테이너에 등록되고 사용
-
-
-## 정리
-스프링 부트의 자동 구성을 직접 만들어서 사용할 때는 다음을 참고하자.
-- @AutoConfiguration 에 자동 구성의 순서를 지정할 수 있다.
-- @AutoConfiguration 도 설정 파일이다. 내부에 @Configuration 이 있는 것을 확인할 수 있다. 하지만 일반 스프링 설정과 라이프사이클이 다르기 때문에 컴포넌트 스캔의 대상이 되면 안된다.
-- 파일에 지정해서 사용해야 한다.
-- 그래서 스프링 부트가 제공하는 컴포넌트 스캔에서는 @AutoConfiguration 을 제외하는 AutoConfigurationExcludeFilter 필터가 포함되어 있다.
-
-## 자동 구성을 언제 사용하는가?
-- AutoConfiguration 은 라이브러리를 만들어서 제공할 때 사용하고, 그 외에는 사용하는 일이 거의 없다. 왜냐하면 보통 필요한 빈들을 컴포넌트 스캔하거나 직접 등록하기 때문이다. 하지만 라이브러리를 만들어서 제공할 때는 자동 구성이 유용하다. 실제로 다양한 외부 라이브러리들이 자동 구성을 함께 제공한다.
-- 보통 이미 만들어진 라이브러리를 가져다 사용하지, 반대로 라이브러리를 만들어서 제공하는 경우는 매우 드물다. 그럼 자동 구성은 왜 알아두어야 할까?
-- 자동 구성을 알아야 하는 진짜 이유는 개발을 진행 하다보면 사용하는 특정 빈들이 어떻게 등록된 것인지 확인이 필요할 때가 있다. 이럴 때 스프링 부트의 자동 구성 코드를 읽을 수 있어야 한다. 그래야 문제가 발생했을 때 대처가 가능하다. 자동화는 매우 편리한 기능이지만 자동화만 믿고 있다가 실무에서 문제가 발생했을 때는 파고 들어가서 문제를 확인하는 정도는 이해해야 한다. 이번에 학습한 정도면 자동 구성 코드를 읽는데 큰 어려움은 없을 것이다.
- 
+**스프링과 설정 데이터**
+개발자가 파일을 읽어서 설정값으로 사용할 수 있도록 개발을 해야겠지만, 스프링 부트는 이미 이런 부분을 다 구현해두었다.
+개발자는 `application.properties` 라는 이름의 파일을 자바를 실행하는 위치에 만들어 두기만 하면 된다.
+그러면 스프링이 해당 파일을 읽어서 사용할 수 있는 PropertySource 의 구현체를 제공한다. 
+스프링에서는 이러한 application.properties 파일을 설정 데이터(Config data) 라 한다.
+당연히 설정 데이터도 Environment 를 통해서 조회할 수 있다.
