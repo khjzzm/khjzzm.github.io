@@ -597,3 +597,31 @@ ConfigurationProperties 장점
 **주의**
 `application.properties`, `application.yml` 을 같이 사용하면 `application.properties` 가 우선권을 가진다.
 이것을 둘이 함께 사용하는 것은 일관성이 없으므로 권장하지 않는다. 참고로 실무에서는 설정 정보가 많아서 보기 편한 yml 을 선호한다.
+
+~~~yml
+spring:
+    config:
+      activate:
+        on-profile: dev
+~~~
+
+
+## @Profile
+프로필과 외부 설정을 사용해서 각 환경마다 설정값을 다르게 적용하는 것은 이해했다.
+그런데 설정값이 다른 정도가 아니라 각 환경마다 서로 다른 빈을 등록해야 한다면 어떻게 해야할까?
+예를 들어서 결제 기능을 붙여야 하는데, 로컬 개발 환경에서는 실제 결제가 발생하면 문제가 되니 가짜 결제 기능이 있는 스프링 빈을 등록하고,
+운영 환경에서는 실제 결제 기능을 제공하는 스프링 빈을 등록한다고 가정해보자.
+
+@Profile의 정체
+~~~java
+package org.springframework.context.annotation;
+  ...
+  @Conditional(ProfileCondition.class)
+  public @interface Profile {
+    String[] value();
+  }
+~~~
+
+@Profile 은 특정 조건에 따라서 해당 빈을 등록할지 말지 선택한다. 어디서 많이 본 것 같지 않은가? 바로 `@Conditional` 이다.
+코드를 보면 @Conditional(ProfileCondition.class) 를 확인할 수 있다.
+스프링은 @Conditional 기능을 활용해서 개발자가 더 편리하게 사용할 수 있는 @Profile 기능을 제공하는 것이다.
