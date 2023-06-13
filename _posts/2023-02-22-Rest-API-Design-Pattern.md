@@ -372,3 +372,7 @@ Location 응답 헤더의 값은 클라이언트의 관심 범위에 있는 리�
 
 `Date: Tue, 15 Nov 1994 08:12:31 GMT
 Expires: Thu, 01 Dec 1994 16:00:00 GMT`
+
+**규칙: Cache-Control, Expires, Pragma 응답 헤더는 캐시 사용을 중지하 는 데 사용해야 한다**
+REST API 응답을 캐시에 저장하지 않도록 하려면, Cache-Control 헤더 값을 no-cache나 no-store로 설정하면 된다. 이 경우에 기존 HTTP 1.0 캐시와의 상 호 운영을 고려한다면 “Pragma: no-cache”와 “Expires: 0” 헤더를 추가한다.
+
