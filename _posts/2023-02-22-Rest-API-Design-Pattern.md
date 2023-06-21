@@ -376,3 +376,5 @@ Expires: Thu, 01 Dec 1994 16:00:00 GMT`
 **규칙: Cache-Control, Expires, Pragma 응답 헤더는 캐시 사용을 중지하 는 데 사용해야 한다**
 REST API 응답을 캐시에 저장하지 않도록 하려면, Cache-Control 헤더 값을 no-cache나 no-store로 설정하면 된다. 이 경우에 기존 HTTP 1.0 캐시와의 상 호 운영을 고려한다면 “Pragma: no-cache”와 “Expires: 0” 헤더를 추가한다.
 
+**규칙: 캐시 기능은 사용해야 한다**
+no-cache 지시자는 캐시 응답이 제공되는 것을 막는다. REST API는 꼭 필요한 경우가 아니면 캐시를 사용하지 않는다. no-cache 지시자를 추가하는 대신 값이 작은 max-age를 사용하면, 클라이언트는 갱신에 관계없이 짧은 시간 내 캐시에 저장된 복사본을 가져올 수 있다.
