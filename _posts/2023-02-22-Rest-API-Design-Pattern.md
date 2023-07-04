@@ -412,3 +412,24 @@ IANAInternet Assigned Numbers Authority02는 등록된 미디어 타입을 관�
 새로운 미디어 타입을 작성해서 [IANA](http://www.iana.org/cgi-bin/mediatypes.pl)에 제안할 수 있다. 널리 사용하는 등록된 미디어 타입을 아래에서 소개한다.
 
 
+**text/plain**
+- 특별한 콘텐츠 구조나 마크업이 없는 평문 포맷
+
+**text/html**
+- HTML로 포맷된 콘텐츠
+
+**image/jpeg**
+- JPEG(Joint Photographic Experts) Group에서 표준화한 이미지 압축 방법
+
+**application/xml**
+-XML(Extensible Markup Language)로 구조화된 콘텐츠
+
+**application/atom+xml**
+- feed로 알려진 구조적인 데이터를 XML 기반의 리스트로 포맷팅한 Atom을 사 용하는 콘텐츠
+
+**application/javascript**
+- 자바스크립트 프로그래밍 언어로 작성된 소스 코드
+
+**application/json**
+- 구조화된 데이터를 교환하는 프로그램에서 주로 사용되는 텍스트 기반의 JSON 포맷
+
