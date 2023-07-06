@@ -433,3 +433,12 @@ IANAInternet Assigned Numbers Authority02는 등록된 미디어 타입을 관�
 **application/json**
 - 구조화된 데이터를 교환하는 프로그램에서 주로 사용되는 텍스트 기반의 JSON 포맷
 
+#### 벤더 고유 미디어 타입
+벤더 고유 미디어 타입은 서브 타입의 접두어로 ‘vnd’를 사용하며, 특정 업체에서 소유 및 관리하고 있음을 의미한다. 
+이 미디어 타입은 메시지 콘텐츠의 세부적인 내용을 프로그램에 전달하므로, 프로그램은 메시지 콘텐츠의 의미를 쉽게 이해할 수 있다. 
+벤더 고유 미디어 타입은 공통 미디어 타입과는 달리 애플리케이션 고유 의 메타데이터를 전달한다. 
+이는 웹 컴포넌트에 보다 의미 있는 메시지를 전달하는 것이다.
+벤더 고유 미디어 타입은 IANA에 등록할 수 있다. 아래에 예로 든 벤더 고유 타입 은 IANA(http://www.iana.org/assignments/media-types)에 등록된 미디어 타입들이다.
+- application/vnd.ms-excel 
+- application/vnd.lotus-notes
+- text/vnd.sun.j2me.app-descriptor
