@@ -132,3 +132,28 @@ https://docs.spring.io/spring-boot/docs/current/reference/html/actuator.html#act
 2. 프로메테우스는 이렇게 만들어진 메트릭을 지속해서 수집한다.
 3. 프로메테우스는 수집한 메트릭을 내부 DB에 저장한다.
 4. 사용자는 그라파나 대시보드 툴을 통해 그래프로 편리하게 메트릭을 조회한다. 이때 필요한 데이터는 프로메테우스를 통해서 조회한다.
+
+
+**포멧 차이**
+- jvm.info -> jvm_info : 프로메테우스는 . 대신에 _ 포멧을 사용한다. . 대신에 _ 포멧으로 변환된 것을 확인할 수 있다.
+- logback.events -> logback_events_total : 로그수 처럼 지속해서 숫자가 증가하는 메트릭을 카운터라 한다. 프로메테우스는 카운터 메트릭의 마지막에는 관례상 _total 을 붙인다.
+- http.server.requests 이 메트릭은 내부에 요청수, 시간 합, 최대 시간 정보를 가지고 있었다. 프로메테우스에서는 다음 3가지로 분리된다.
+  - http_server_requests_seconds_count : 요청 수 
+  - http_server_requests_seconds_sum : 시간 합(요청수의 시간을 합함) 
+  - http_server_requests_seconds_max : 최대 시간(가장 오래걸린 요청 수)
+대략 이렇게 포멧들이 변경된다고 보면 된다. 포멧 변경에 대한 부분은 진행하면서 자연스럽게 알아보자.
+
+### 프로메테우스 - 수집 설정
+prometheus.yml
+~~~yml
+  - job_name: "spring-actuator"
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 1s
+    static_configs:
+      - targets: ['localhost:4463']
+~~~
+
+- job_name : 수집하는 이름이다. 임의의 이름을 사용하면 된다. 
+- metrics_path : 수집할 경로를 지정한다.
+- scrape_interval : 수집할 주기를 설정한다.
+- targets : 수집할 서버의 IP, PORT를 지정한다.
