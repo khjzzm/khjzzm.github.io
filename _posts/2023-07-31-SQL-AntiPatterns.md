@@ -190,11 +190,202 @@ Contacts.account_id가 Accounts.account_id를 참조 하도록 선언해, 참조
 ### 구분자 문자 선택
 각 항목을 별도의 행으로 저장하므로 구분자를 사용하지 않는다. 쉼표나 구분 자로 사용하는 다른 문자가 항목에 포함되어 있을지 걱정할 필요가 없다.
 
-
 ### 목록 길이 제한
-각 항목이 교차 테이블에 별도 행으로 존재하기 때문에, 한 테이블에 물리적 으로저장할수있는행수에만제한을받는다.
+각 항목이 교차 테이블에 별도 행으로 존재하기 때문에, 한 테이블에 물리적 으로 저장 할 수 있는 행 수에만 제한을 받는다.
+
+**SQL Antipatterns Tip 각 값은 자신의 칼럼과 행에 저장하라.** 
+
+---------
+
+# 순진한 트리
+독자들이 답글을 달 수 있고 심지어 답글에 대한 답글도 달 수 있기 때문에, 가지를 뻗어 깊게 확장하는 글타래를 형성할 수 있다.
+각 답글은 답글을 다는 대상 글 에대한 참조를 가지도록 하는 단순한 해법을 선택했다.
+
+~~~sql
+CREATE TABLE Comments (
+    comment_id
+    parent_id
+    comment
+    FOREIGN KEY (parent_id) REFERENCES Comments(comment_id)
+);
+~~~
+그러나 곧 답글의 긴 타래를 하나의 SQL 쿼리로 불러오기가 어렵다는 점이 명확해진다. 단지 고정된 깊이까지만,
+즉 바로 아래 자식 또는 그 아래 손자뻘 되는 글까지 얻어낼 수 있다. 그렇지만 글타래는 깊이가 무제한이다.
+
+생각할 수 있는 다른 방법은 모든 글을 불러온 다음, 학교에서 배운 전통적 인 트리 알고리즘을 사용해 애플리케이션 메모리 안에서 트리 구조를 구성하 는 것이다. 
 
 
+## 목표: 계층구조 저장 및 조회하기
+데이터는 트리나 계층적 구조가될수있다. 트리 데이터 구조에서 각 항목은 노드라 불린다.
+노드는 여러개의 자식을 가질수 있고 부모를 하나 가진다. 부모가 없는 최상위노드를 `뿌리(root)`라 한다. 
+가장 아래에 있는 자식이 없는 노드를 `종말노드(leaf)`라 부 른다. 중간에 있는 노드는 간단히 `노드(non-leaf)`라 한다.
+
+## 안티패턴: 항상 부모에 의존하기
+책과 글에서 흔히 설명하는 초보적 방법은 parent_id 칼럼을 추가하는 것이다. 이 칼럼은 같은 테이블 안의 다른 글을 참조하며, 이 관계를 강제하기 위해 FK 제약조건을 걸 수 있다.
+
+~~~sql
+CREATE TABLE Comments (
+    comment_id,
+    parent_id,
+    bug_id,
+    author,
+    comment_date,
+    comment,
+    FOREIGN KEY (parent_id) REFERENCES Comments(comment_id), 
+    FOREIGN KEY (bug_id) REFERENCES Bugs(bug_id),
+    FOREIGN KEY (author) REFERENCES Accounts(account_id) 
+);
+~~~
+이 설계는 인접 목록(Adjacency List)이라 불린다. 소프트웨어 개발자가 계 층적 데이터를 저장하는 데 사용하는 가장 흔한 설계일 것이다.
+
+### 인접 목록에서 트리 조회하기
+답글과 그 답글의 바로 아래 자식은 비교적 간단한 쿼리로 얻을 수 있다.
+
+~~~sql
+SELECT c1.*, c2.*
+FROM Comments c1 LEFT OUTER JOIN Comments c2
+    ON c2.parent_id = c1.comment_id;
+~~~
+그러나 이 쿼리는 단지 트리의 두 단계만 조회한다. 단계에 상관없이 후손들을 조회 할 수 있어야 한다. 예를 들어, COUNT()로 글타래의 답글 수를 계산하거나,
+SUM()을 이용해 기계 조립에서 부품의 비용 합계를 구할 수 있어야 한다.
+ 
+인접 목록을 사용하면 이런 종류의 쿼리가 이상해진다. 트리의 각 단계를 조인으로 구해야 하는데, SQL 쿼리에서 조인 회수는 미리 고정되어야 하기 때 문이다.  
+다음 쿼리는 트리에서 4단계까지 가져오지만 그 이상의 깊이에 있는 데이터는 가져오지 못한다.
+
+~~~sql
+SELECT c1.*, c2.*, c3.*, c4.*
+FROM Comments c1 -- 1단계
+    LEFT OUTER JOIN Comments c2
+        ON c2.parent_id = c1.comment_id -- 2단계
+    LEFT OUTER JOIN Comments c3
+        ON c3.parent_id = c2.comment_id -- 3단계
+    LEFT OUTER JOIN Comments c4
+        ON c4.parent_id = c3.comment_id; -- 4단계
+~~~
+또한 이 쿼리는 단계가 깊어질수록 칼럼을 추가하는 방식으로 후손을 포함 시키기 때문에 주의를 요한다.
+이렇게 하면 COUNT()와 같은 집계 수치를 계 산하기가 어려워진다.
+
+데이터베이스에서 애플리케이션으로 대량의 데이터를 가져오는 방법은 엄 청나게 비효율적이다. 
+꼭대기로부터 전체 트리가 필요한 게 아니라 단지 서브 트리만 필요할 수도 있다. 또는 답글의 COUNT()와 같은 데이터의 집계 정보 만필요할수도있다.
+
+### 인접 목록에서 트리 유지하기
+인접 목록에서 새로운 노드를 추가하는 것과 같은 일부 연산은 간단해진다는 점을 인정해야겠다.
+또한 노드 하나 또는 서브트리를 이동하는 것 또한 쉽다.
+~~~sql
+INSERT INTO Comments (bug_id, parent_id, author, comment) VALUES (1234, 7, ‘Kukla‘, ‘Thanks!‘);
+UPDATE Comments SET parent_id = 3 WHERE comment_id = 6;
+~~~
+
+그러나 트리에서 노드를 삭제하는 것은 좀더 복잡하다.
+서브트리 전체를 삭 제하려면 FK 제약조건을 만족하기 위해 여러 번 쿼리를 날려 모든 자손을 찾 은 다음, 가장 아래 단계부터 차례로 삭제하면서 올라가야 한다.
+
+~~~sql
+SELECT comment_id FROM Comments WHERE parent_id = 4;
+SELECT comment_id FROM Comments WHERE parent_id = 5;
+SELECT comment_id FROM Comments WHERE parent_id = 6;
+SELECT comment_id FROM Comments WHERE parent_id = 7;
+
+DELETE FROM Comments WHERE comment_id IN (7);
+DELETE FROM Comments WHERE comment_id IN (5, 6);
+DELETE FROM Comments WHERE comment_id = 4;
+~~~
+
+삭제할 노드의 자손을 현재 노드의 부모로 이어 붙인다거나 이동하지 않고 항상 함께 삭제한다면, FK에 ON DELETE CASCADE 옵션을 주어 이를 자동화 할수있다.
+그러나 자식이 있는 노드를 삭제하면서 그 자식을 자신의 부모에 이어 붙인 다거나 또는 트리의 다른 곳으로 이동하고 싶은 경우에는, 먼저 자식들의 parent_id를 변경한 다음 원하는 노드를 삭제해야 한다.
+
+~~~sql
+SELECT parent_id FROM Comments WHERE comment_id = 6; -- 4 리턴 
+UPDATE Comments SET parent_id = 4 WHERE parent_id = 6;
+DELETE FROM Comments WHERE comment_id = 6;
+~~~
+
+## 안티패턴 인식 방법
+다음과 같은 말을 듣는다면, 순진한 트리 안티패턴이 사용되고 있음을 눈치챌 수 있다.
+- “트리에서 얼마나 깊은 단계를 지원해야 하지? ”
+- “트리 데이터 구조를 관리하는 코드는 건드리는 게 겁나.”
+- “트리에서 고아 노드를 정리하기 위해 주기적으로 스크립트를 돌려야 해.”
+
+## 안티패턴 사용이 합당한 경우
+인접 목록이 애플리케이션에서 필요한 작업을 지원하는 데 적당할 수도 있다. 
+인접 목록의 강점은 주어진 노드의 부모나 자식을 바로 얻을 수 있다는 것이 다. 또한 새로운 노드를 추가하기도 쉽다. 
+
+## 해법: 대안 트리 모델 사용
+계층적 데이터를 저장하는 데는 인접 목록 모델 외에도 `경로 열거(Path Enumeration)`, `중첩 집합(Nested Sets)`, `클로저 테이블(Closure Table)`
+과 같은 몇 가지 대안이 있다.
+
+### 경로 열거
+경로 열거 방법에서는 일련의 조상을 각 노드의 속성 으로 저장해 이를 해결한다.
+Comments 테이블에 parent_id 칼럼 대신, 긴 VARCHAR 타입의 path란 칼럼 을 정의한다.
+이 칼럼에 저장되는 문자열은 트리의 꼭대기부터 현재 행까지 내려오는 조상의 나열로, UNIX 경로와 비슷하다. 심지어‘/ ’를 구분자로 사용 해도 된다.
+
+~~~sql
+CREATE TABLE Comments (
+    comment_id,
+    path,   --1/4/67
+    bug_id,
+    author,
+    comment_date,
+    comment,
+    FOREIGN KEY (bug_id) REFERENCES Bugs(bug_id),
+    FOREIGN KEY (author) REFERENCES Accounts(account_id)
+);
+~~~
+
+조상은 현재 행의 경로와 다른 행의 경로 패턴을 비교해 조회할 수 있다. 예 를 들어 경로가 1/4/6/7/인 답글 #7의 조상을 찾으려면 다음과 같이 한다.
+~~~sql
+SELECT *
+FROM Comments AS c
+WHERE ‘1/4/6/7/‘ LIKE c.path || ‘%‘;
+~~~
+이렇게 하면 조상의 경로로 만든 패턴 1/4/6/%, 1/4/%, 1/%가 매치된다.
+
+LIKE의 인수를 반대로 하면 후손을 구할 수 있다. 경로가 1/4/인 답글 #4의 후손을 찾으려면 다음과 같이 하면 된다.
+
+~~~sql
+SELECT *
+FROM Comments AS c
+WHERE c.path LIKE ‘1/4/‘ || ‘%‘;
+~~~
+패턴 1/4/%는 후손의 경로 1/4/5/, 1/4/6/, 1/4/6/7/과 매치된다.
+
+트리의 일부나 트리의 꼭대기까지 조상의 연결을 쉽게 조회할 수 있다면, 서브트리에서 노드의 비용 SUM()을 계산한다든가 또는 단순히 노드의 
+수를 세는 것과 같은 다른 쿼리도 쉽게 할 수 있다. 
+~~~sql
+SELECT COUNT(*)
+FROM Comments AS c
+WHERE c.path LIKE ‘1/4/‘ || ‘%‘ GROUP BY c.author;
+~~~
+
+새 노드의 부모 경로를 복사한 다음 여기에 새 노드의 아이디를 덧붙이면 된다. 삽입할 때 PK(Primary Key) 값이 자동으로 생성되는 경우라면 먼저 행을 삽입한 다 음, 삽입한 새로운 행의 아이디를 이용해 경로를 갱신해야 한다.
+~~~sql
+INSERT INTO Comments (author, comment) VALUES (‘Ollie‘, ‘Good job!‘);
+
+UPDATE Comments
+    SET path = (SELECT path FROM Comments WHERE comment_id = 7)
+        || LAST_INSERT_ID() || ‘/‘
+WHERE comment_id = LAST_INSERT_ID();
+~~~
+
+경로 열거는 2장「무단횡단」에서 설명했던 것과 비슷한 단점이 있다. 데이 터베이스는 경로가 올바르게 형성되도록 하거나 경로 값이 실제 노드에 대응 
+되도록 강제할 수 없다. 경로 문자열을 유지하는 것은 애플리케이션 코드에 종속되며, 이를 검증하는 데는 비용이 많이 든다. VARCHAR 칼럼의 길이를 
+아무리 길게 잡아도 결국 제한이 있기 때문에, 엄격히 말하면 지원할 수 있는 트 리의 깊이 또한 제한된다.
 
 
+### 중첩집합
+중첩 집합은 각 노드가 자신의 부모를 저장하는 대신 자기 자손의 집합에 대 한 정보를 저장한다. 
+이 정보는 트리의 각 노드를 두 개의 수로 부호화 (encode)해 나타낼 수 있는데, 여기서는 nsleft와 nsright로 부르겠다.
+
+todo
+
+### 클로저 테이블
+
+todo
+
+### 어떤 모델을 사용해야 하는가?
+
+todo
+
+---------
+
+# 아이디가 필요해
 
