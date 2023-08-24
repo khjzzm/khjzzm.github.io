@@ -388,4 +388,26 @@ todo
 ---------
 
 # 아이디가 필요해
+컨텐트 관리 데이터베이스에, 웹 사이트에 공개할 기사를 저장했다. 기 사 테이블과 태그 테이블 사이의 다대다 관계를 위해 교차 테이블을 사용했다.
+~~~sql
+CREATE TABLE ArticleTags (
+id article_id tag_id FOREIGN KEY FOREIGN KEY
+);
+SERIAL PRIMARY KEY,
+BIGINT UNSIGNED NOT NULL,
+BIGINT UNSIGNED NOT NULL,
+(article_id) REFERENCES Articles (id), (tag_id) REFERENCES Tags (id)
+~~~
+그러나 특정 태그가 달린 기사 수를 세는 쿼리에서 잘못된 결과가 나오고 있었다. 그는“경제”태그가 달린 기사가 다섯 개라는 것을 알고 있었지만, 쿼 리를 실행하면 일곱 개로 나왔다.
+
+~~~sql
+SELECT tag_id, COUNT(*) AS articles_per_tag FROM ArticleTags
+WHERE tag_id = 327;
+~~~
+
+## 목표: PK 관례 확립
+목표는 모든 테이블이 PK를 갖도록 하는 것이지만, PK의 본질을 혼동하면 안 티패턴을 초래할 수 있다.
+PK는 좋은 데이터베이스 설계에 정말 중 요하다. PK는 테이블 내의 모든 행이 유일함을 보장하기 때문에, 각 행에 접근
+하는 논리적 메커니즘이 되고 중복 행이 저장되는 것을 방지한다. 또한 PK는 관계를 생성할 때 FK로부터 참조되기도 한다.
+
 
