@@ -388,7 +388,8 @@ todo
 ---------
 
 # 아이디가 필요해
-컨텐트 관리 데이터베이스에, 웹 사이트에 공개할 기사를 저장했다. 기 사 테이블과 태그 테이블 사이의 다대다 관계를 위해 교차 테이블을 사용했다.
+중복 행을 방지하려고 노력하 는 소프트웨어 개발자의 질문이었는데, 처음에는 PK(primary key)를 잡지 않 았기 때문이라 생각했다.
+컨텐트 관리 데이터베이스에, 웹 사이트에 공개할 기사를 저장했다. 기사 테이블과 태그 테이블 사이의 다대다 관계를 위해 교차 테이블을 사용했다.
 ~~~sql
 CREATE TABLE ArticleTags (
 id article_id tag_id FOREIGN KEY FOREIGN KEY
@@ -406,8 +407,70 @@ WHERE tag_id = 327;
 ~~~
 
 ## 목표: PK 관례 확립
-목표는 모든 테이블이 PK를 갖도록 하는 것이지만, PK의 본질을 혼동하면 안 티패턴을 초래할 수 있다.
-PK는 좋은 데이터베이스 설계에 정말 중 요하다. PK는 테이블 내의 모든 행이 유일함을 보장하기 때문에, 각 행에 접근
-하는 논리적 메커니즘이 되고 중복 행이 저장되는 것을 방지한다. 또한 PK는 관계를 생성할 때 FK로부터 참조되기도 한다.
+목표는 모든 테이블이 PK를 갖도록 하는 것이지만, PK의 본질을 혼동하면 안티패턴을 초래할 수 있다.
+PK는 좋은 데이터베이스 설계에 정말 중요하다. PK는 테이블 내의 모든 행이 유일함을 보장하기 때문에,
+각 행에 접근 하는 논리적 메커니즘이 되고 중복 행이 저장되는 것을 방지한다. 또한 PK는 관계를 생성할 때 FK로부터 참조되기도 한다.
+까다로운 부분은 PK로 사용할 칼럼을 선정하는 일이다. 대부분의 테이블에서 어느 속성의 값이든 하나 이상의 행에서 나타날 잠재적 가능성이 있다.
+
+테이블로 모델링한 영역에서는 아무런 의미도 가지지 않 는 인위적인 값을 저장할 새로운 칼럼이 필요하다. 
+이 칼럼을 PK로 사용하면 (만약 이것이 적절하다면), 다른 속성 칼럼에는 중복 값이 들어가는 것을 허용 하는 반면 특정 행에 유일하게 접근할 수 있게 된다.
+이런 형태의 PK를 `가상키(pseudokey)` 또는 `대체키(surrogate key)`라 한다.
 
 
+## 안티패턴 : 만능키
+책이나 기사, 프로그래밍 프레임워크는 데이터베이스 내 모든 테이블이 다음 과 같은 특성을 가지는 PK 칼럼을 가지도록 하는 문화적 관례를 만들었다.
+- PK 칼럼 이름은 id다.
+- PK 칼럼의 데이터 타입은 32비트 또는 64비트 정수다.
+- 유일한 값은 자동 생성된다.
+
+모든 테이블에 id란 이름의 칼럼이 있는 것은 너무도 흔해져 이게 PK와 동 의어가 되어 버렸다. 
+SQL을 배우는 프로그래머들은 PK가 항상 다음과 같은 식으로 정의되는 칼럼이라는 잘못된 생각을 갖게 된다.
+
+### 중복 키 생성
+테이블 안의 다른 칼럼이 자연키로 사용될 수 있는 상황에서조차 단지 통념에 따라 id 칼럼을 PK로 정의한 것을 봤을 것이다.
+그 다른 칼럼에 UNIQUE 제약 조건이 설정되어 있는 경우도 있다. 예를 들어, Bugs 테이블에서는 프로젝트 코드를 앞에 붙여 bug_id를 만들 수 있을 것이다.
+
+~~~sql
+CREATE TABLE Bugs (
+    id SERIAL PRIMARY KEY, bug_id VARCHAR(10) UNIQUE, description VARCHAR(1000),
+    ...
+);
+INSERT INTO Bugs (bug_id, description, ...) VALUES (‘VIS-078‘, ‘crashes on save‘, ...);
+
+~~~
+
+### 중복 행 허용
+복합키는 여러 칼럼을 포함한다. 복합키가 사용되는 전형적인 예는 Bugs Products와 같은 교차 테이블 안에서다. 
+PK는 특정한 bug_id와 product_id 값의 조합이 테이블 안에서 한 번만 나타난다는 것을 보장해야 한다. 
+각 값이 다른 쌍으로 여러 번 나타날 수 있을지라도 말이다.
+그러나 id 칼럼을 PK로 사용하는 경우에는 유일해야 하는 두 칼럼에 제약조 건이 적용되지 않는다.
+~~~sql
+CREATE TABLE BugsProducts (
+    id,
+    bug_id product_id FOREIGN KEY FOREIGN KEY,
+    SERIAL PRIMARY KEY,
+    BIGINT UNSIGNED NOT,
+    BIGINT UNSIGNED NOT,
+    (bug_id) REFERENCES,
+    (product_id) REFERENCES Products(product_id),
+);
+INSERT INTO BugsProducts (bug_id, product_id)
+VALUES (1234, 1), (1234, 1), (1234, 1); -- 중복이 허용됨
+~~~
+
+Bugs와 Products를 연결하기 위해 이 교차 테이블을 사용할 때, 중복 때문에 의도하지 않은 결과가 발생한다. 
+중복을 방지하기 위해서는 id뿐 아니라 다른 두 칼럼에 UNIQUE 제약조건을 걸어줘야 한다.
+
+~~~sql
+CREATE TABLE BugsProducts (
+    id SERIAL PRIMARY KEY,
+    bug_id BIGINT UNSIGNED NOT NULL,
+    product_id BIGINT UNSIGNED NOT NULL,
+    UNIQUE KEY (bug_id, product_id),
+    FOREIGN KEY (bug_id) REFERENCES Bugs(bug_id),
+    FOREIGN KEY (product_id) REFERENCES Products(product_id)
+);
+~~~
+그러나 이 두 칼럼에 UNIQUE 제약조건을 걸어야 한다면, id 칼럼은 불필요 한 것이다.
+
+### 모호한 키의 의미
