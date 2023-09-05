@@ -1,7 +1,7 @@
 ---
 layout: post
 category: book
-title: SQL AntiPatterns
+title: SQL AntiPatterns (논리적 데이터베이스 설계)
 ---
 
 ## 논리적 데이터베이스 설계 안티패턴
@@ -633,7 +633,7 @@ CREATE TABLE Bugs
     reported_by BIGINT UNSIGNED NOT NULL,
     status      VARCHAR(20)     NOT NULL DEFAULT ‘NEW‘,
     FOREIGN KEY (reported_by) REFERENCES Accounts (account_id)
-        ON UPDATE CASCADE
+        ON UPDATE CASCADEn
         ON DELETE RESTRICT,
     FOREIGN KEY (status) REFERENCES BugStatus (status)
         ON UPDATE CASCADE
@@ -649,3 +649,74 @@ FK 제약조건이 약간의 오버헤드가 있는 것은 사실이다. 그러�
 - 불가피하게 생기는 고아 데이터를 정정하기 위해 품질 제어 스크립트를 주기적으로 돌릴 필요가 없다.
 
 **SQL Antipatterns Tip 제약조건을 사용해 데이터베이스에서 실수를 방지하라.**
+
+
+# 엔터티-속성-값
+
+"날짜별로 행 수를 세려면 어떻게 해야 하지?"
+~~~sql
+SELECT date_reported, COUNT(*)
+FROM Bugs
+GROUP BY date_reported;
+~~~
+그러나이간단한답에는두개의가정이숨어있다.
+- 값이 Bugs.date_reported와 같이 한 칼럼에 저장된다.
+- 값을 서로 비교 할 수 있어 GROUPBY에서 같은 값끼리 모을 수 있다.
+
+이런 가정이 맞지 않다면 어떻게 될까? 날짜가 date_reported 또는 report_date 칼럼에 저장되거나 또는 각 행마다 다른 칼럼 이름으로 저장된다 면 어떻게 될까? 
+날짜가 서로 다른 다양한 형식으로 입력되어 컴퓨터에서 두 날짜를 쉽게 비교 할 수 없다면 어떻게 될까?
+
+`엔터티-속성-값`이라 불리는 안티패턴을 사용하는 경우 이런 문제(또는 다른 문제)에 봉착할 수 있다.
+
+## 목표: 가변 속성 지원
+일반적인 테이블은 테이블에 있는 모든 행과 관계된 속성 칼럼으로 이루어 져 있고, 
+각 행은 비슷한 객체의 인스턴스를 나타낸다. 속성 집합이 다르면 객 체의 타입도 다르다는 뜻이며, 따라서 다른 테이블에 있어야 한다.
+
+그러나 현대적인 객체지향 프로그래밍 모델에서는 동일한 데이터 타입을 확장(상속)하는 것과 같은 방법으로 객체의 타입도 관계를 가질 수 있다. 
+객체 지향 설계에서 이런 객체들은 서브타입 인스턴스로 다룰 수도 있고, 같은 베 이스 타입의 인스턴스로 간주할 수도 있다. 
+우리는 여러 객체의 계산이나 비 교를 간단히 하기 위해 객체를 하나의 데이터베이스 테이블에 행으로 저장하 고 싶다. 
+또한 객체의 각 서브타입이 베이스 타입이나 다른 서브타입에는 적 용되지 않는 속성 칼럼을 저장하는 것도 허용해야 한다.
+
+## 안티패턴: 범용 속성 테이블 사용
+- 엔터티: 보통 이 칼럼은 하나의 엔터티에 대해 하나의 행을 가지는 부모 테이블에 대한 FK다.
+- 속성: 일반적인 테이블에서의 칼럼 이름을 나타내지만, 이 새로운 설계에 서는 각 행마다 속성이 하나씩 들어간다.
+- 값: 모든 엔터티는 각 속성에 대한 값을 가진다.예를 들어, PK 값이 1234 인 버그가 주어졌을 때, status란 속성을 가지고, 그 속성 값은 NEW다.
+
+이 설계는 `엔터티-속성-값(Entity-Attribute-Value)` 또는 줄여서 EAV라 불린 다. 때로는 `오픈 스키마(open schema)`, 
+`스키마리스(schemaless)` 또는 `이름-값 쌍(name-value pairs)`로 불리기도 한다.
+
+~~~sql
+CREATE TABLE Issues (
+    issue_id SERIAL PRIMARY KEY
+);
+
+CREATE TABLE IssueAttributes (
+    issue_id    BIGINT UNSIGNED NOT NULL,
+    attr_name   VARCHAR(100) NOT NULL,
+    attr_value  VARCHAR(100),
+    PRIMARY KEY (issue_id, attr_name),
+    FOREIGN KEY (issue_id) REFERENCES Issues(issue_id)
+);
+~~~
+별도 테이블을 추가해 다음과 같은 이득을 얻은 것 같아 보인다.
+- 두테이블 모두 적은 칼럼을 갖고 있다.
+- 새로운 속성을 지원하기 위해 칼럼 수를 늘릴 필요가 없다.
+- 특정 속성이 해당 행에 적용되지 않을 때 NULL을 채워야 하는 칼럼이 지저분 하게 생기는 것을 피할 수 있다.
+
+개선된 설계처럼 보인다. 그러나 데이터베이스 설계가 단순하다고 해서 사용하기 어려운 것을 보상해주지는 않는다.
+
+### 속성조회
+~~~sql
+SELECT issue_id, date_reported FROM Issues;
+
+SELECT issue_id, attr_value AS "date_reported"
+FROM IssueAttributes
+WHERE attr_name = ‘date_reported‘;
+~~~
+EAV 설계를 사용할 때 위 쿼리와 동일한 정보를 얻으려면, IssueAttributes 테이블에서 문자열로 date_reported란 이름의 속성을 가진 행을 꺼내야 한다. 이 쿼리는 더 복잡하고 덜 명확하다.
+
+### 데이터 정합성 지원
+
+
+---------
+**100p**
