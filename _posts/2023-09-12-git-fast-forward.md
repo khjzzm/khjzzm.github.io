@@ -11,9 +11,6 @@ Fast-Forward 병합의 상황을 설명하면 다음과 같습니다
 2. `feature` 브랜치에서 일부 커밋을 추가합니다.
 3. 그 동안 `master` 브랜치에는 어떠한 새로운 커밋도 추가되지 않았습니다.
 
-이제 feature 브랜치를 master로 병합하려고 할 때, 병합 과정에서 추가적인 병합 커밋을 만들 필요 없이 master 브랜치의 포인터만 
-feature 브랜치의 가장 최신 커밋으로 이동시키면 됩니다. 이를 "Fast-Forward"라고 부릅니다.
-
 ~~~bash
 # master 브랜치에서
 git checkout master
