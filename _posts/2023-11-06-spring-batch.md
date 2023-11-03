@@ -64,3 +64,5 @@ ItemWriter는 처리 된 Data를 Writer 할 때 사용한다. Writer는 처리 �
 ### ItemProcessor
 Item Processor는 Reader에서 읽어온 Item을 데이터를 처리하는 역할을 하고 있다. Processor는 배치를 처리하는데 필수 요소는 아니며 Reader, Writer, Processor 처리를 분리하여 각각의 역할을 명확하게 구분하고 있습니다.
 
+
+2023 ver
