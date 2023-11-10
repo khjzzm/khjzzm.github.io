@@ -51,9 +51,11 @@ ExecutionContext를 통해 Step간 Data 공유가 가능하며 Job 실패시 Exe
 ### JobRepository
 JobRepository는 위에서 말한 모든 배치 처리 정보를 담고있는 매커니즘입니다.
 Job이 실행되게 되면 JobRepository에 JobExecution과 StepExecution을 생성하게 되며 JobRepository에서 Execution 정보들을 저장하고 조회하며 사용하게 됩니다.
+다양한 배치 수행과 관련된 수치데이터 (시작시간, 종료시간, 상태, 읽기/쓰기 횟수 등) 뿐만 아니라 잡의 상태를 유지 관리한다.
 
 ### JobLauncher
-JobLauncher는 Job과 JobParameters를 사용하여 Job을 실행하는 객체입니다.
+JobLauncher는 Job과 JobParameters를 사용하여 Job을 실행하는 객체입니다. JobLauncher가 처리중에 어떤 처리를 수행할지는 개발자가 구현하기에 따라 달라진다.
+스프링 부트 환경이라면 스프링 부트가 즉시 잡을 시작하는 기능을 제공하므로, 일반적으로 직접 다룰 필요가 없는 컴포넌트 이다.
 
 ### ItemReader
 ItemReader는 Step에서 Item을 읽어오는 인터페이스입니다. ItemReader에 대한 다양한 인터페이스가 존재하며 다양한 방법으로 Item을 읽어 올 수 있습니다.
@@ -65,4 +67,3 @@ ItemWriter는 처리 된 Data를 Writer 할 때 사용한다. Writer는 처리 �
 Item Processor는 Reader에서 읽어온 Item을 데이터를 처리하는 역할을 하고 있다. Processor는 배치를 처리하는데 필수 요소는 아니며 Reader, Writer, Processor 처리를 분리하여 각각의 역할을 명확하게 구분하고 있습니다.
 
 
-2023 ver
