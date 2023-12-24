@@ -4,9 +4,10 @@ title: 2023년 회고
 ---
 
 ## 1월
-![1](https://khjzzm.github.io/assets/image/2023/1.jpg)
+![1](https://khjzzm.github.io/assets/image/2023/1-0.jpg)
+![1](https://khjzzm.github.io/assets/image/2023/1-1.jpg)
 ## 2월
-![2](https://khjzzm.github.io/assets/image/2023/2.jpg)
+![2](https://khjzzm.github.io/assets/image/2023/2-0.jpg)
 ## 3월
 ![3](https://khjzzm.github.io/assets/image/2023/3.jpg)
 ## 4월
