@@ -12,4 +12,3 @@ title: AWS-Lambda
 - 최대 300초(5분) 런타임 시간 허용
 - 521MB의 일시적인 디스크 공간 제공 (/tmp/)
 - 최대 50MB Deployment Package 허용
-- 
