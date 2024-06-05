@@ -22,6 +22,14 @@ entries:
       show_more_text: See more book...
       show_more_url: book-archive.html
 
+  - title: 日本語
+    post_list:
+      category: 日本語
+      limit: 3
+      show_more: true
+      show_more_text: See more 日本語...
+      show_more_url: 日本語-archive.html
+
   - title: crossfit
     post_list:
       category: crossfit
