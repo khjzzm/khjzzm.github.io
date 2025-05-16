@@ -8,7 +8,7 @@ title: 사진으로 보는 2023년
 ![1](https://khjzzm.github.io/assets/image/2023/1-0.jpg)
 ![1](https://khjzzm.github.io/assets/image/2023/1-1.jpg)
 ## 2월
-![2](https://khjzzm.github.io/assets/image/2023/2-0.jpg)
+![2](https://khjzzm.github.io/assets/image/2023/2.jpg)
 ## 3월
 ![3](https://khjzzm.github.io/assets/image/2023/3-0.jpg)
 ![3](https://khjzzm.github.io/assets/image/2023/3-1.jpg)
