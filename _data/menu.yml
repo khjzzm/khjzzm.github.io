@@ -6,13 +6,13 @@ entries:
       show_more_text: See all posts...
       show_more_url: archive.html
 
-  - title: BTTP
+  - title: git log --since=1.year.ago
     post_list:
-      category: bttp
+      category: wakatime
       limit: 3
       show_more: true
-      show_more_text: See more BTTP...
-      show_more_url: bttp-archive.html
+      show_more_text: See more log...
+      show_more_url: wakatime-archive.html
 
   - title: book
     post_list:
