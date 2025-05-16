@@ -17,7 +17,8 @@ title: 사진으로 보는 2023년
 ## 5월
 ![5](https://khjzzm.github.io/assets/image/2023/5.jpg)
 ## 6월
-![6](https://khjzzm.github.io/assets/image/2023/6.jpg)
+![6](https://khjzzm.github.io/assets/image/2023/6-0.jpg)
+![6](https://khjzzm.github.io/assets/image/2023/6-1.jpg)
 ## 7월
 ![7](https://khjzzm.github.io/assets/image/2023/7.jpg)
 ## 8월
@@ -30,5 +31,6 @@ title: 사진으로 보는 2023년
 ## 11월
 ![11](https://khjzzm.github.io/assets/image/2023/11.jpg)
 ## 12월
-![12](https://khjzzm.github.io/assets/image/2023/12-0.jpeg)
+![12](https://khjzzm.github.io/assets/image/2023/12-0.jpg)
 ![12](https://khjzzm.github.io/assets/image/2023/12-1.jpg)
+![12](https://khjzzm.github.io/assets/image/2023/12-2.jpg)
