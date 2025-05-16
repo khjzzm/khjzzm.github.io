@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 2023년 회고
+category: wakatime
+title: 사진으로 보는 2023년
 ---
 
 ## 1월
@@ -24,8 +25,10 @@ title: 2023년 회고
 ## 9월
 ![9](https://khjzzm.github.io/assets/image/2023/9.jpg)
 ## 10월
-![10](https://khjzzm.github.io/assets/image/2023/10.jpg)
+![10](https://khjzzm.github.io/assets/image/2023/10-0.jpg)
+![10](https://khjzzm.github.io/assets/image/2023/10-1.jpg)
 ## 11월
 ![11](https://khjzzm.github.io/assets/image/2023/11.jpg)
 ## 12월
-![12](https://khjzzm.github.io/assets/image/2023/12.jpg)
+![12](https://khjzzm.github.io/assets/image/2023/12-0.jpg)
+![12](https://khjzzm.github.io/assets/image/2023/12-1.jpg)

@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 2022년 회고
+category: wakatime
+title: 사진으로 보는 2022년
 ---
 
 ## 1월
