@@ -1,6 +1,5 @@
 ---
 layout: post
-category: book
 title: SQL AntiPatterns (쿼리 안티패턴)
 ---
 

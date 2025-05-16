@@ -3,6 +3,18 @@
 
 @import "no-style-please";
 
+.w {
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: 4rem 2rem;
+}
+
+@media (max-width: 768px) {
+  .w {
+    padding: 2rem 1rem;
+  }
+}
+
 .menu-group {
   margin: 2rem 0;
 }
@@ -12,4 +24,30 @@
 .menu-title {
   font-size: 1.25rem;
   margin-bottom: 0.5rem;
+}
+
+.footer-links {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid #e0e0e0;
+  font-size: 0.95rem;
+  color: #555;
+}
+
+.footer-links .link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 1.5rem;
+  padding-left: 0;
+  margin-top: 0.5rem;
+  list-style: none;
+}
+
+.footer-links .link-grid li a {
+  color: #007acc;
+  text-decoration: none;
+}
+
+.footer-links .link-grid li a:hover {
+  text-decoration: underline;
 }

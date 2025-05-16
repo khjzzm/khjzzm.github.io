@@ -1,6 +1,5 @@
 ---
 layout: post
-category: book
 title: SQL AntiPatterns (논리적 데이터베이스 설계)
 ---
 

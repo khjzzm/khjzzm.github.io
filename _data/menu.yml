@@ -1,7 +1,7 @@
 entries:
   - title: all posts
     post_list:
-      limit: 5
+      limit: 7
       show_more: true
       show_more_text: See all posts...
       show_more_url: archive.html
@@ -9,7 +9,7 @@ entries:
   - title: git log --since=1.year.ago
     post_list:
       category: wakatime
-      limit: 3
+      limit: 5
       show_more: true
       show_more_text: See more log...
       show_more_url: wakatime-archive.html
@@ -17,7 +17,7 @@ entries:
   - title: book
     post_list:
       category: book
-      limit: 3
+      limit: 5
       show_more: true
       show_more_text: See more book...
       show_more_url: book-archive.html

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: @NotNull @NotBlank @NotEmpty
+title: Spring에서 자주 쓰는 유효성 검증 어노테이션 3종 비교
 ---
 
 `javax.validation.constraints` 패키지 내의 `@NotNull`, `@NotBlank`, `@NotEmpty` 어노테이션은 Java 객체의 유효성 검사에 사용되며, 각각 다른 유형의 제약 조건을 나타냅니다.
