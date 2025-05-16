@@ -30,5 +30,5 @@ title: 사진으로 보는 2023년
 ## 11월
 ![11](https://khjzzm.github.io/assets/image/2023/11.jpg)
 ## 12월
-![12](https://khjzzm.github.io/assets/image/2023/12-0.jpg)
+![12](https://khjzzm.github.io/assets/image/2023/12-0.jpeg)
 ![12](https://khjzzm.github.io/assets/image/2023/12-1.jpg)
