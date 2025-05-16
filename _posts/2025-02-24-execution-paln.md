@@ -2,8 +2,6 @@
 layout: post
 title: MySQL RDS 실행 계획(Execution Plan)
 ---
-# MySQL RDS 실행 계획(Execution Plan) 
-
 MySQL에서 실행 계획을 분석하는 것은 **쿼리 성능을 최적화하는 핵심 과정**입니다. RDS 환경에서도 실행 계획을 활용하면 **인덱스 활용 여부, 조인 방식, 풀 테이블 스캔 발생 여부** 등을 확인하고 성능을 개선할 수 있습니다.
 
 ---
