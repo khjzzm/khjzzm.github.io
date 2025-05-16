@@ -21,9 +21,3 @@ entries:
       show_more: true
       show_more_text: See more book...
       show_more_url: book-archive.html
-
-  - title: bookmark
-    url: bookmark
-
-  - title: "<a href='https://github.com/khjzzm' target='_blank'>github repo<a/>"
-  - title: "<a href='mailto:khjzzm@gmail.com?subject=제목&body=내용'>mail</a>"
