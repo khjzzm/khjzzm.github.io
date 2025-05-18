@@ -1,9 +1,7 @@
 ---
 layout: post
-category: book
-title: 일관성 있는 웹 서비스 인터페이스 설계를 위한 REST API 디자인 규칙
+title: 일관된 REST API 설계 원칙
 ---
-
 
 ## 1. REST 소개
 ### 1.1 Hello World Wild Web
