@@ -4,18 +4,19 @@
 @import "no-style-please";
 
 header h1 {
-  font-size: 2rem;
+  font-size: 2rem; /* 기본 크기 */
   margin: 0;
 }
 
 header p {
-  font-size: 1rem;
+  font-size: 1.1rem; /* 기본 크기 */
   margin: 0.5em 0 0;
 }
 
 .menu-group {
-  margin: 2rem 0;
+  margin: 1rem 0;
 }
+
 .menu-item {
   margin-bottom: 2rem;
 }
@@ -50,29 +51,23 @@ header p {
   text-decoration: underline;
 }
 
-@media (max-width: 600px) {
-  body {
-    font-size: 0.9rem;
-  }
 
-  h1 {
+@media (max-width: 600px) {
+  .w h1 {
     font-size: 1.4rem;
   }
 
   header p {
-    font-size: 0.9rem;
+    font-size: 0.7em;
   }
 
   .menu-title {
-    font-size: 1.1rem;
-  }
-
-  .footer-links {
-    font-size: 0.85rem;
+    font-size: 1.0rem;
   }
 
   .footer-links .link-grid {
-    grid-template-columns: 1fr; /* 한 줄로 바꾸기 */
+    grid-template-columns: 1fr;
     gap: 0.4rem 1rem;
   }
 }
+
