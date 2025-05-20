@@ -3,16 +3,14 @@
 
 @import "no-style-please";
 
-.w {
-  max-width: 1024px;
-  margin: 0 auto;
-  padding: 4rem 2rem;
+header h1 {
+  font-size: 2rem;
+  margin: 0;
 }
 
-@media (max-width: 768px) {
-  .w {
-    padding: 2rem 1rem;
-  }
+header p {
+  font-size: 1rem;
+  margin: 0.5em 0 0;
 }
 
 .menu-group {
@@ -50,4 +48,31 @@
 
 .footer-links .link-grid li a:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+  body {
+    font-size: 0.9rem;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+  }
+
+  header p {
+    font-size: 0.9rem;
+  }
+
+  .menu-title {
+    font-size: 1.1rem;
+  }
+
+  .footer-links {
+    font-size: 0.85rem;
+  }
+
+  .footer-links .link-grid {
+    grid-template-columns: 1fr; /* 한 줄로 바꾸기 */
+    gap: 0.4rem 1rem;
+  }
 }
