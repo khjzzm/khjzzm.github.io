@@ -1,6 +1,6 @@
 ---
 layout: post
-category: wakatime
+category: commit
 title: 사진으로 보는 2024년
 ---
 

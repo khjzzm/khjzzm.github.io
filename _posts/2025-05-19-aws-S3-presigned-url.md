@@ -16,9 +16,7 @@ RESPONSE=$(curl -s -X POST 람다+API게이트웨이 주소 \
   -d '{ "fileName": "test.png", "fileType": "image/png" }')
 
 # 2. Presigned URL 추출
-URL=$(echo "$RESPONSE" | jq -r .url)
-
-# 3. 파일 업로드 (PUT 방식)
+URL=$(echo "$RESPONSE" | jq -r .url)# 3. 파일 업로드 (PUT 방식)
 curl -X PUT "$URL" \
   -H "Content-Type: image/png" \
   --upload-file ./test.png

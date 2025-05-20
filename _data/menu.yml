@@ -6,18 +6,18 @@ entries:
       show_more_text: See all posts...
       show_more_url: archive.html
 
-  - title: git log --since=1.year.ago
+  - title: 커밋된 시간들
     post_list:
-      category: wakatime
+      category: commit
       limit: 5
       show_more: true
-      show_more_text: See more log...
-      show_more_url: wakatime-archive.html
+      show_more_text: See more commit...
+      show_more_url: commit-archive.html
 
-  - title: book
+  - title: 컴파일되지 않는 이야기
     post_list:
-      category: book
+      category: devlog
       limit: 5
       show_more: true
-      show_more_text: See more book...
-      show_more_url: book-archive.html
+      show_more_text: See more Devlog Beyond...
+      show_more_url: devlog-archive.html
