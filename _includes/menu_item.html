@@ -1,8 +1,8 @@
-<div class="menu-group">
+<section>
     {%- for item in include.collection -%}
-    <div class="menu-item">
+    <article>
         {%- if item.title or item.url -%}
-        <h2 class="menu-title">
+        <h2>
             {%- if item.url -%}
             <a href="{{ item.url }}">{{ item.title }}</a>
             {%- else -%}
@@ -25,6 +25,6 @@
         {%- if item.entries -%}
             {%- include menu_item.html collection=item.entries -%}
         {%- endif -%}
-    </div>
+    </article>
     {%- endfor -%}
-</div>
+</section>

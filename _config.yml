@@ -1,15 +1,18 @@
 title: It works on all machine
 description: But only after 31 commits and 3 cups of coffee..
-author: hyunjin kim
+author: Hyunjin Kim
 email: khjzzm@gmail.com
 url: https://khjzzm.github.io/
 baseurl: "/"
-permalink: /:year/:month/:slug # /:categories/:year/:month/:day/:title:output_ext
+permalink: /:year/:month/:slug
 favicon: "logo.png"
+
+lang: ko
+timezone: Asia/Seoul
 
 remote_theme: riggraz/no-style-please
 theme_config:
-  appearance: "auto" # can be "light", "dark" or "auto"
+  appearance: "auto"
   back_home_text: "이전"
   date_format: "%Y-%m-%d"
   show_description: true
@@ -20,3 +23,9 @@ sass:
 plugins:
   - jekyll-feed
   - jekyll-seo-tag
+
+exclude:
+  - README.md
+  - node_modules
+  - Gemfile
+  - Gemfile.lock

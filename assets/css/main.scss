@@ -3,71 +3,104 @@
 
 @import "no-style-please";
 
-header h1 {
-  font-size: 2rem; /* 기본 크기 */
-  margin: 0;
+.w{
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
 }
 
-header p {
-  font-size: 1.1rem; /* 기본 크기 */
-  margin: 0.5em 0 0;
+li a {
+  text-decoration: none;
 }
 
-.menu-group {
-  margin: 1rem 0;
-}
-
-.menu-item {
-  margin-bottom: 2rem;
-}
-.menu-title {
-  font-size: 1.25rem;
-  margin-bottom: 0.5rem;
-}
-
-.footer-links {
+footer {
   margin-top: 3rem;
   padding-top: 2rem;
   border-top: 1px solid #e0e0e0;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   color: #555;
 }
 
-.footer-links .link-grid {
+footer .link-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem 1.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
   padding-left: 0;
   margin-top: 0.5rem;
   list-style: none;
 }
 
-.footer-links .link-grid li a {
+footer .link-grid li a {
   color: #007acc;
-  text-decoration: none;
-}
-
-.footer-links .link-grid li a:hover {
-  text-decoration: underline;
 }
 
 
-@media (max-width: 600px) {
-  .w h1 {
+/* PC 버전: 1025px 이상 */
+@media (min-width: 1025px) {
+  header h1 {
+    font-size: 2rem;
+  }
+
+  header p {
+    font-size: 1.1rem;
+  }
+
+  article h2{
+    font-size: 1.6rem;
+  }
+}
+
+/* 태블릿: 768px ~ 1024px */
+@media (min-width: 768px) and (max-width: 1024px) {
+  header h1 {
+    font-size: 1.8rem;
+  }
+
+  header p {
+    font-size: 1.25rem;
+  }
+
+  article h2 {
+    font-size: 1.4rem;
+  }
+}
+
+#theme-toggle {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+/* 모바일 (iPhone 14 Pro Max ~ 14 Pro): 376px ~ 767px */
+@media (min-width: 376px) and (max-width: 767px) {
+  header h1 {
+    font-size: 1.6rem;
+  }
+
+  header p {
+    font-size: 1.15rem;
+  }
+
+  article h2 {
+    font-size: 1.3rem;
+  }
+}
+
+/* 모바일 (iPhone SE 및 그 이하): 375px 이하 */
+@media (max-width: 375px) {
+  header h1 {
     font-size: 1.4rem;
   }
 
   header p {
-    font-size: 0.7em;
+    font-size: 1rem;
   }
 
-  .menu-title {
-    font-size: 1.0rem;
-  }
-
-  .footer-links .link-grid {
-    grid-template-columns: 1fr;
-    gap: 0.4rem 1rem;
+  article h2 {
+    font-size: 1.1rem;
   }
 }
-
