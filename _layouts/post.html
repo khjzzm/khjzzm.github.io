@@ -2,14 +2,50 @@
 layout: default
 ---
 
-{%-include back_link.html-%}
+{%- include breadcrumbs.html -%}
 
-<article>
-  <p class="post-meta">
-    <time datetime="{{ page.date }}">{{ page.date | date: site.theme_config.date_format }}</time>
-  </p>
-  
-  <h1>{{ page.title }}</h1>
+<article class="post">
+  <header class="post-header">
+    <p class="post-meta">
+      <time datetime="{{ page.date }}">{{ page.date | date: site.theme_config.date_format }}</time>
+      {%- if page.tags -%}
+        <span class="post-tags">
+          {%- for tag in page.tags -%}
+            <a href="{{ '/tags.html#' | append: tag | relative_url }}" class="tag">{{ tag }}</a>
+          {%- endfor -%}
+        </span>
+      {%- endif -%}
+    </p>
+    
+    <h1 class="post-title">{{ page.title }}</h1>
+  </header>
 
-  {{ content }}
+  <div class="post-content">
+    {{ content }}
+  </div>
+
+  <footer class="post-navigation">
+    {%- assign prev_post = page.previous -%}
+    {%- assign next_post = page.next -%}
+    
+    {%- if prev_post or next_post -%}
+    <nav class="post-nav" aria-label="포스트 네비게이션">
+      {%- if prev_post -%}
+        <div class="nav-previous">
+          <span class="nav-label">이전 포스트</span>
+          <a href="{{ prev_post.url | relative_url }}" class="nav-link">{{ prev_post.title }}</a>
+        </div>
+      {%- endif -%}
+      
+      {%- if next_post -%}
+        <div class="nav-next">
+          <span class="nav-label">다음 포스트</span>
+          <a href="{{ next_post.url | relative_url }}" class="nav-link">{{ next_post.title }}</a>
+        </div>
+      {%- endif -%}
+    </nav>
+    {%- endif -%}
+
+    {%- include back_link.html -%}
+  </footer>
 </article>

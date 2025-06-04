@@ -59,6 +59,7 @@ EXPLAIN ANALYZE SELECT * FROM your_table WHERE some_column = 'some_value';
         - **풀 인덱스 스캔(Full Index Scan)** 이란 인덱스 테이블을 처음부터 끝까지 다 뒤져서 데이터를 찾는 방식이다. 인덱스의 테이블은 실제 테이블보다 크기가 작기 때문에, **풀 테이블 스캔(Full Table Scan)보다 효율적**이다. 하지만 인덱스 테이블 전체를 읽어야 하기 때문에 **아주 효율적이라고 볼 수는 없다.**
       - range : 인덱스 레인지 스캔 (Index Range Scan)
         - **인덱스 레인지 스캔(Index Range Scan)** 은 인덱스를 활용해 범위 형태의 데이터를 조회한 경우를 의미한다. 범위 형태란 `BETWEEN`, `부등호(<, >, ≤, ≥)`, `IN`, `LIKE`를 활용한 데이터 조회를 뜻한다. 이 방식은 인덱스를 활용하기 때문에 **효율적인 방식**이다. 하지만 인덱스를 사용하더라도 데이터를 조회하는 범위가 클 경우 성능 저하의 원인이 되기도 한다.
+        - WHERE문의 부등호(>, <, ≤, ≥, =), IN, BETWEEN, LIKE와 같은 곳에서 사용되는 컬럼은 인덱스를 사용했을 때 성능이 향상될 가능성이 높다
       - ref : 비고유 인덱스를 활용하는 경우
         - 비고유 인덱스를 사용한 경우 (= UNIQUE가 아닌 컬럼의 인덱스를 사용한 경우) `type`에 `ref`가 출력된다.
       - const :  1건의 데이터를 바로 찾을 수 있는 경우
@@ -147,10 +148,9 @@ SELECT * FROM orders WHERE order_date > '2024-01-01' ORDER BY customer_id;
 ---
 
 ## 5. 결론
-1. **`EXPLAIN`을 사용하여 실행 계획을 분석**
-2. **풀 테이블 스캔(`ALL`)을 피하고 인덱스를 활용**
-3. **조인(`JOIN`) 시 적절한 인덱스를 설정**
-4. **ORDER BY, GROUP BY 최적화 (filesort, temporary 테이블 피하기)**
-5. **쿼리 튜닝 후 `EXPLAIN ANALYZE`로 실제 성능 확인**
+1. `EXPLAIN`을 사용하여 실행 계획을 분석
+2. 풀 테이블 스캔(`ALL`)을 피하고 인덱스를 활용
+3. 조인(`JOIN`) 시 적절한 인덱스를 설정
+4. ORDER BY, GROUP BY 최적화 (filesort, temporary 테이블 피하기)
+5. 쿼리 튜닝 후 `EXPLAIN ANALYZE`로 실제 성능 확인
 
-이제 `EXPLAIN`을 활용해 RDS MySQL 쿼리 성능을 최적화해보세요! 🚀

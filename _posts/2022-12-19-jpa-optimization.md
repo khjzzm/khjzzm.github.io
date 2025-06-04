@@ -1,6 +1,7 @@
 ---
 layout: post
-title: JPA 활용 - API 개발과 성능 최적화
+title: JPA 성능 최적화
+tags: [jpa, hibernate, performance, database, orm, optimization]
 ---
 
 

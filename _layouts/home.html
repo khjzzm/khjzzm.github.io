@@ -1,23 +1,32 @@
 ---
 layout: default
 ---
-<header>
-  <h1>{{ site.title }}</h1>
+<header class="site-header">
+  <h1 class="site-title">{{ site.title }}</h1>
   {%-if site.theme_config.show_description-%}
-    <p>{{ site.description }}</p>
+    <p class="site-description">{{ site.description }}</p>
   {%-endif-%}
 </header>
 
-{%-include menu_item.html collection=site.data.menu.entries-%}
+<main class="site-content">
+  {%-include menu_item.html collection=site.data.menu.entries-%}
 
-{{ content }}
+  {{ content }}
 
-<footer>
-  <ul class="link-grid">
-    <li><a href="{{ '/assets/resume/kimhyunjin_resume.pdf' | relative_url }}" download> résumé(PDF)</a></li>
-    <li><a href="https://github.com/khjzzm" target="_blank" rel="noopener">GitHub</a></li>
-    <li><a href="https://kimhunjin.notion.site/1f5878ad80ff8031b269ede63ae57752?v=1f5878ad80ff8077a33b000c0c937ba2" target="_blank" rel="noopener">Side project</a></li>
-    <li><a href="https://kimhunjin.notion.site/1f7878ad80ff8034b7b5d82bc2445661?v=1f7878ad80ff808abdf4000c62fee3b9" target="_blank" rel="noopener">Book</a></li>
-    <li><a href="https://www.youtube.com/@kimuzzang" target="_blank" rel="noopener">Youtube</a></li>
-  </ul>
+  <aside class="sidebar">
+    {%- include tag_cloud.html -%}
+  </aside>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-links">
+    <h3>링크</h3>
+    <ul class="link-grid">
+      <li><a href="{{ '/assets/resume/kimhyunjin_resume.pdf' | relative_url }}" download> résumé(PDF)</a></li>
+      <li><a href="https://github.com/khjzzm" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="https://kimhunjin.notion.site/1f5878ad80ff8031b269ede63ae57752?v=1f5878ad80ff8077a33b000c0c937ba2" target="_blank" rel="noopener">Side project</a></li>
+      <li><a href="https://kimhunjin.notion.site/1f7878ad80ff8034b7b5d82bc2445661?v=1f7878ad80ff808abdf4000c62fee3b9" target="_blank" rel="noopener">Book</a></li>
+      <li><a href="https://www.youtube.com/@kimuzzang" target="_blank" rel="noopener">Youtube</a></li>
+    </ul>
+  </div>
 </footer>

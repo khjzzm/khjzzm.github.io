@@ -1,0 +1,43 @@
+---
+layout: default
+---
+
+{%- include breadcrumbs.html -%}
+
+<article class="tags-page">
+  <header>
+    <h2>{{ page.title | default: "태그별 포스트" }}</h1>
+    <p class="page-description">태그를 클릭하여 관련 포스트를 확인하세요.</p>
+  </header>
+
+  <div class="tag-cloud-large">
+    {%- for tag in site.tags -%}
+      <a href="#{{ tag[0] }}" class="tag-link large">
+        {{ tag[0] }} ({{ tag[1].size }})
+      </a>
+    {%- endfor -%}
+  </div>
+
+  <div class="tag-sections">
+    {%- for tag in site.tags -%}
+      <section class="tag-section" id="{{ tag[0] }}">
+        <h3 class="tag-title">
+          <span class="tag-name">{{ tag[0] }}</span>
+          <span class="tag-count">({{ tag[1].size }}개)</span>
+        </h2>
+        
+        <ul class="post-list">
+          {%- assign posts_sorted = tag[1] | sort: 'date' | reverse -%}
+          {%- for post in posts_sorted -%}
+            <li class="post-item">
+              <time class="post-date">{{ post.date | date: site.theme_config.date_format }}</time>
+              <a href="{{ post.url | relative_url }}" class="post-link">{{ post.title }}</a>
+            </li>
+          {%- endfor -%}
+        </ul>
+      </section>
+    {%- endfor -%}
+  </div>
+
+  {%- include back_link.html -%}
+</article> 

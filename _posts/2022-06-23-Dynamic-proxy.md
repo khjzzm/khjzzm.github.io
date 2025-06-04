@@ -1,6 +1,7 @@
 ---
 layout: post
 title: 동적 프록시 기술
+tags: [java]
 ---
 
 ## 리플렉션

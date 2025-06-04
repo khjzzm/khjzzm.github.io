@@ -1,6 +1,7 @@
 ---
 layout: post
 title: required a single bean 빈 중복
+tags: [spring]
 ---
 
 스프링 컨테이너가 객체 의존성을 주입 할때 해당 타입의 빈이 여러개 인경우 아래와 같은 에러 메시지가 나온다.   

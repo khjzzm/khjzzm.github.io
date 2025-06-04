@@ -1,6 +1,7 @@
 ---
 layout: post
 title: Next.js
+tags: [nextjs, react, javascript, ssr, ssg, web-development, frontend]
 ---
 
 ## why Next.js

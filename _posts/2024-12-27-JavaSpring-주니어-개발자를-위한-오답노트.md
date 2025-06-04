@@ -1,6 +1,7 @@
 ---
 layout: post
 title: Java/Spring 주니어 개발자를 위한 오답노트
+tags: [java, spring, oop, design-pattern, clean-code, coding-convention, architecture]
 ---
 
 순차 지향 프로그래밍과 절차 지향 프로그래밍의 차으를 설명하실 수 있나요?
@@ -101,7 +102,7 @@ Procedure "In different programming languages, a subroutine may be called a rout
 - Entity 와 DB Entity 는 다르다는 말을 합니다. JPA 의 Entity 는 흔히 말하는 DB Entity 에 해당한다 보시면 되십니다. 그리고 개인적으로 DB Entity 라는 용어보다는 PO 라고 부르는게 더 맞다고 생각합니다.
 
 **객체를 만들 때의 고민**
-객체의 종류에는 3종류만 있는 것이 아니며, 완벽한 분류는 어렵습니다. VO 이면서 Entity 일 수 있으며, DTO 이면서 PO 일 수 도 있고 셋 다 아닐 수도 있다.
+객체의 종류에는 3종류만 있는 것이 아니며, 완벽한 분류는 어렵습니다. VO 이면서 Entity 일 수 있으며, DTO 이면서 PO 일 수도 있고 셋 다 아닐 수도 있다.
 사실 분류보다 어딴 갑을 불변으로 만들 것인가? 어떤 인터페이스를 노출할 것인가?
 
 번외로 DAO(Data Access Object), BO(Business Object), SO(Service Object) 

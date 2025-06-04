@@ -1,6 +1,7 @@
 ---
 layout: post
-title: SQL AntiPatterns (논리적 데이터베이스 설계)
+title: SQL AntiPatterns - 논리적 데이터베이스 설계 안티패턴
+tags: [sql, database, antipattern, database-design, data-modeling, normalization]
 ---
 
 ## 논리적 데이터베이스 설계 안티패턴
@@ -48,7 +49,7 @@ CREATE TABLE Products
     FOREIGN KEY(account_id) REFERENCES Accounts (account_id)
 );
 INSERT INTO Products (product_id, product_name, account_id)
-VALUES (DEFAULT, ‘Visual TurboBuilder‘, 12);
+VALUES (DEFAULT, 'Visual TurboBuilder', 12);
 ~~~
 각 계정은 많은 제품에 대응되고, 각 프 로젝트는 담당자를 하나만 참조하므로, 제품과 계정은 다대일 관계다.
 프로젝트가 성숙해가면서, 제품의 담당자가 여러 명일 수도 있다는 사실을 깨닫는다.
@@ -62,7 +63,7 @@ CREATE TABLE Products (
     product_id SERIAL PRIMARY KEY, product_name VARCHAR(1000),
     account_id VARCHAR(100), -- 쉼표로구분된목록 ... 
 );
-INSERT INTO Products (product_id, product_name, account_id) VALUES (DEFAULT, ‘Visual TurboBuilder‘, ‘12,34‘);
+INSERT INTO Products (product_id, product_name, account_id) VALUES (DEFAULT, 'Visual TurboBuilder', '12,34');
 
 ~~~
 
@@ -73,7 +74,7 @@ INSERT INTO Products (product_id, product_name, account_id) VALUES (DEFAULT, ‘
 모든 FK가 하나의 필드에 결합되어 있으면 쿼리가 어려워진다. 더 이상 같은 지를 비교할 수 없다. 대신 어떤 패턴에 맞는지를 검사해야 한다.
 
 ~~~sql
-SELECT * FROM Products WHERE account_id REGEXP ‘[[:<:]]12[[:>:]]‘;
+SELECT * FROM Products WHERE account_id REGEXP '[[:<:]]12[[:>:]]';
 ~~~
 
 패턴 매칭을 사용하면 잘못 된 결과가 리턴 될 수 있고 인덱스도 활용하지 못 한다. 패턴 매칭 문법은 데이터베이스 제품에 따라 다르기 때문에 이렇게 작 성한 SQL은 벤더 중립적이지도 않다.
@@ -82,7 +83,7 @@ SELECT * FROM Products WHERE account_id REGEXP ‘[[:<:]]12[[:>:]]‘;
 마찬가지로, 쉼표로 구분된 목록을 참조하는 테이블의 대응되는 행과 조인하 기도 불편해지고 비용이 많이 든다.
 ~~~sql
 SELECT * FROM Products AS p JOIN Accounts AS a
-    ON p.account_id REGEXP ‘[[:<:]]‘ || a.account_id || ‘[[:>:]]‘
+    ON p.account_id REGEXP '[[:<:]]' || a.account_id || '[[:>:]]'
 WHERE p.product_id = 123;
 ~~~
 
@@ -91,7 +92,7 @@ WHERE p.product_id = 123;
  쉼표로 구분된 목록에 대해 사용하도록 설계된 것이 아니다. 따라서 다음과 같은 기교에 의지해야 한다.
  
 ~~~sql
-SELECT product_id, LENGTH(account_id) - LENGTH(REPLACE(account_id, ‘,‘, ‘‘)) + 1
+SELECT product_id, LENGTH(account_id) - LENGTH(REPLACE(account_id, ',', '')) + 1
     AS contacts_per_product
 FROM Products;
 ~~~
@@ -101,14 +102,14 @@ FROM Products;
 
 ~~~ sql
 UPDATE Products
-SET account_id = account_id || ‘,‘ || 56 WHERE product_id = 123;
+SET account_id = account_id || ',' || 56 WHERE product_id = 123;
 ~~~
 
 ### 제품 아이디 유효성 검증
 사용자가 banana와 같은 유효하지 않은 항목을 입력하는 것을 어떻게 방지할 수 있을까?
 
 ~~~sql
-INSERT INTO Products (product_id, product_name, account_id) VALUES (DEFAULT, ‘Visual TurboBuilder‘, ‘12,34,banana‘);
+INSERT INTO Products (product_id, product_name, account_id) VALUES (DEFAULT, 'Visual TurboBuilder', '12,34,banana');
 ~~~
 
 사용자들은 유효하지 않은 값을 입력하는 방법을 찾아낼 것이고, 데이터베 이스는 쓰레기 더미가 될 것이다.
@@ -122,9 +123,9 @@ VARCHAR(30) 칼럼에 얼마나 많은 목록 항목을 저장할 수 있을까?
 
 ## 안티패턴 인식 방법
 프로젝트 팀에서 다음과 같은 말이 나온다면, 무단횡단 안티패턴이 사용되고 있음을 나타내는 단서로 간주할 수 있다.
-- “이 목록이 지원해야 하는 최대 항목 수는 얼마나 될까?” VARCHAR 칼럼의 최대 길이를 선정하려 할 때 이런 질문이 나온다.
-- “SQL에서 단어의 경계를 어떻게 알아내는지 알아?” 문자열의 일부를 찾아내기 위해 정규 표현식을 사용한다면, 이런 부분을 별도로 저장해야 함을 뜻하는 단서일 수 있다.
-- “이 목록에서 절대 나오지 않을 문자가 어떤 게 있을까?” 모호하지 않은 문자를 구분자로 사용하고 싶겠지만, 어떤 구분자를 쓰든 언젠가는 그 문자가 목록의 값에 나타날 것이라 예상해야 한다.
+- "이 목록이 지원해야 하는 최대 항목 수는 얼마나 될까? " VARCHAR 칼럼의 최대 길이를 선정하려 할 때 이런 질문이 나온다.
+- "SQL에서 단어의 경계를 어떻게 알아내는지 알아? " 문자열의 일부를 찾아내기 위해 정규 표현식을 사용한다면, 이런 부분을 별도로 저장해야 함을 뜻하는 단서일 수 있다.
+- "이 목록에서 절대 나오지 않을 문자가 어떤 게 있을까? " 모호하지 않은 문자를 구분자로 사용하고 싶겠지만, 어떤 구분자를 쓰든 언젠가는 그 문자가 목록의 값에 나타날 것이라 예상해야 한다.
 
 ## 안티패턴 사용이 합당한 경우
 데이터베이스에 반정규화(denormalization)를 적용해 성 능을 향상시킬 수 있다. 목록을 쉼표로 구분된 문자열로 저장하는 것도 반정 규화의 예다.
@@ -271,7 +272,7 @@ FROM Comments c1 -- 1단계
 인접 목록에서 새로운 노드를 추가하는 것과 같은 일부 연산은 간단해진다는 점을 인정해야겠다.
 또한 노드 하나 또는 서브트리를 이동하는 것 또한 쉽다.
 ~~~sql
-INSERT INTO Comments (bug_id, parent_id, author, comment) VALUES (1234, 7, ‘Kukla‘, ‘Thanks!‘);
+INSERT INTO Comments (bug_id, parent_id, author, comment) VALUES (1234, 7, 'Kukla', 'Thanks!');
 UPDATE Comments SET parent_id = 3 WHERE comment_id = 6;
 ~~~
 
@@ -300,9 +301,9 @@ DELETE FROM Comments WHERE comment_id = 6;
 
 ## 안티패턴 인식 방법
 다음과 같은 말을 듣는다면, 순진한 트리 안티패턴이 사용되고 있음을 눈치챌 수 있다.
-- “트리에서 얼마나 깊은 단계를 지원해야 하지? ”
-- “트리 데이터 구조를 관리하는 코드는 건드리는 게 겁나.”
-- “트리에서 고아 노드를 정리하기 위해 주기적으로 스크립트를 돌려야 해.”
+- "트리에서 얼마나 깊은 단계를 지원해야 하지? "
+- "트리 데이터 구조를 관리하는 코드는 건드리는 게 겁나."
+- "트리에서 고아 노드를 정리하기 위해 주기적으로 스크립트를 돌려야 해."
 
 ## 안티패턴 사용이 합당한 경우
 인접 목록이 애플리케이션에서 필요한 작업을 지원하는 데 적당할 수도 있다. 
@@ -315,7 +316,7 @@ DELETE FROM Comments WHERE comment_id = 6;
 ### 경로 열거
 경로 열거 방법에서는 일련의 조상을 각 노드의 속성 으로 저장해 이를 해결한다.
 Comments 테이블에 parent_id 칼럼 대신, 긴 VARCHAR 타입의 path란 칼럼 을 정의한다.
-이 칼럼에 저장되는 문자열은 트리의 꼭대기부터 현재 행까지 내려오는 조상의 나열로, UNIX 경로와 비슷하다. 심지어‘/ ’를 구분자로 사용 해도 된다.
+이 칼럼에 저장되는 문자열은 트리의 꼭대기부터 현재 행까지 내려오는 조상의 나열로, UNIX 경로와 비슷하다. 심지어' '를 구분자로 사용 해도 된다.
 
 ~~~sql
 CREATE TABLE Comments (
@@ -334,7 +335,7 @@ CREATE TABLE Comments (
 ~~~sql
 SELECT *
 FROM Comments AS c
-WHERE ‘1/4/6/7/‘ LIKE c.path || ‘%‘;
+WHERE '1/4/6/7/' LIKE c.path || '%';
 ~~~
 이렇게 하면 조상의 경로로 만든 패턴 1/4/6/%, 1/4/%, 1/%가 매치된다.
 
@@ -343,7 +344,7 @@ LIKE의 인수를 반대로 하면 후손을 구할 수 있다. 경로가 1/4/�
 ~~~sql
 SELECT *
 FROM Comments AS c
-WHERE c.path LIKE ‘1/4/‘ || ‘%‘;
+WHERE c.path LIKE '1/4/' || '%';
 ~~~
 패턴 1/4/%는 후손의 경로 1/4/5/, 1/4/6/, 1/4/6/7/과 매치된다.
 
@@ -352,16 +353,16 @@ WHERE c.path LIKE ‘1/4/‘ || ‘%‘;
 ~~~sql
 SELECT COUNT(*)
 FROM Comments AS c
-WHERE c.path LIKE ‘1/4/‘ || ‘%‘ GROUP BY c.author;
+WHERE c.path LIKE '1/4/' || '%' GROUP BY c.author;
 ~~~
 
 새 노드의 부모 경로를 복사한 다음 여기에 새 노드의 아이디를 덧붙이면 된다. 삽입할 때 PK(Primary Key) 값이 자동으로 생성되는 경우라면 먼저 행을 삽입한 다 음, 삽입한 새로운 행의 아이디를 이용해 경로를 갱신해야 한다.
 ~~~sql
-INSERT INTO Comments (author, comment) VALUES (‘Ollie‘, ‘Good job!‘);
+INSERT INTO Comments (author, comment) VALUES ('Ollie', 'Good job!');
 
 UPDATE Comments
     SET path = (SELECT path FROM Comments WHERE comment_id = 7)
-        || LAST_INSERT_ID() || ‘/‘
+        || LAST_INSERT_ID() || '/';
 WHERE comment_id = LAST_INSERT_ID();
 ~~~
 
@@ -398,7 +399,7 @@ BIGINT UNSIGNED NOT NULL,
 BIGINT UNSIGNED NOT NULL,
 (article_id) REFERENCES Articles (id), (tag_id) REFERENCES Tags (id)
 ~~~
-그러나 특정 태그가 달린 기사 수를 세는 쿼리에서 잘못된 결과가 나오고 있었다. 그는“경제”태그가 달린 기사가 다섯 개라는 것을 알고 있었지만, 쿼 리를 실행하면 일곱 개로 나왔다.
+그러나 특정 태그가 달린 기사 수를 세는 쿼리에서 잘못된 결과가 나오고 있었다. 그는"경제"태그가 달린 기사가 다섯 개라는 것을 알고 있었지만, 쿼 리를 실행하면 일곱 개로 나왔다.
 
 ~~~sql
 SELECT tag_id, COUNT(*) AS articles_per_tag FROM ArticleTags
@@ -434,7 +435,7 @@ CREATE TABLE Bugs (
     id SERIAL PRIMARY KEY, bug_id VARCHAR(10) UNIQUE, description VARCHAR(1000),
     ...
 );
-INSERT INTO Bugs (bug_id, description, ...) VALUES (‘VIS-078‘, ‘crashes on save‘, ...);
+INSERT INTO Bugs (bug_id, description, ...) VALUES ('VIS-078', 'crashes on save', ...);
 
 ~~~
 
@@ -473,13 +474,13 @@ CREATE TABLE BugsProducts (
 그러나 이 두 칼럼에 UNIQUE 제약조건을 걸어야 한다면, id 칼럼은 불필요 한 것이다.
 
 ### 모호한 키의 의미
-코드란 단어는 여러 가지 정의를 가지는데, 그 중 하나는‘간결하거나 비밀스 럽게 메시지를 주고받는 방법’이란 정의다. 프로그래밍에서 코드는‘의미를 명확하게 한다’는 반대 목표를 가져야 한다.
+코드란 단어는 여러 가지 정의를 가지는데, 그 중 하나는'간결하거나 비밀스 럽게 메시지를 주고받는 방법'이란 정의다. 프로그래밍에서 코드는'의미를 명확하게 한다'는 반대 목표를 가져야 한다.
 id란 이름은 너무 일반적이기 때문에 아무런 의미도 갖지 못한다. 이는 PK 칼럼 이름이 동일한 두 테이블을 조인할 때 특히 문제가 된다.
 
 ~~~sql
 SELECT b.id, a.id
 FROM Bugs b
-JOIN Accounts a ON (b.assigned_to = a.id) WHERE b.status = ‘OPEN‘;
+JOIN Accounts a ON (b.assigned_to = a.id) WHERE b.status = 'OPEN';
 ~~~
 
 원래의 위치 대신 이름만으로 칼럼을 참조한다면 애플리케이션 코드에서 버그의 id와 계정의 id를 어떻게 구분할 것인가? 
@@ -531,7 +532,7 @@ FK에서도 가능하다면 같은 칼럼 이름을 사용해야 한다. 이는 
 객체-관계 프레임워크는 id란 이름의 가상키가 사용될 것을 기대하지만, 다른 이름을 사용하도록 재설정하는 것도 허용한다. 다음은 Roby on Rails4에서의 예다.
 ~~~rb
 class Bug < ActiveRecord::Base 
-    set_primary_key ”bug_id”
+    set_primary_key "bug_id"
 end
 ~~~
 
@@ -588,21 +589,21 @@ ON (b.status = s.status) WHERE s.status IS NULL;
 둘 을 동시에 변경해야 하지만, 두 개의 분리된 업데이트 문으로는 이렇게 하기가 불가능하다. 이러지도 저리지도 못하는 상황이다.
 
 ~~~sql
-UPDATE BugStatus SET status = ‘INVALID‘ WHERE status = ‘BOGUS‘; -- 에러!
-UPDATE Bugs SET status = ‘INVALID‘ WHERE status = ‘BOGUS‘; -- 에러!
+UPDATE BugStatus SET status = 'INVALID' WHERE status = 'BOGUS'; -- 에러!
+UPDATE Bugs SET status = 'INVALID' WHERE status = 'BOGUS'; -- 에러!
 ~~~
 일부 개발자들은 이런 상황을 처리하는 게 어렵다고 생각해 아예 FK를 사용 하지 않기로 결정해버린다.
 이 장의 뒷부분에서, FK를 사용했을 때 여러 테이 블을 업데이트하거나 삭제하는 간단하고 효율적인 방법을 살펴볼 것이다.
 
 ## 안티패턴 인식 방법
 사람들이 다음과 같은 말을 하는 걸 들으면, 아마도 키가 없는 엔트리 안티패턴을 사용하고 있을 것이다.
-- "어떤 값이 한 테이블에는 있고 다른 테이블에는 없는지 확인하려면 쿼리를 어떻게 작성해야 하지?” 이는 보통 부모가 업데이트되거나 삭제되어 고아가 된 자식 행을 찾으려 는 것이다.
+- "어떤 값이 한 테이블에는 있고 다른 테이블에는 없는지 확인하려면 쿼리를 어떻게 작성해야 하지? " 이는 보통 부모가 업데이트되거나 삭제되어 고아가 된 자식 행을 찾으려 는 것이다.
 - "테이블에 삽입하면서 다른 테이블에 어떤 값이 있는지를 확인하는 빠른 방법이 없을까?" 이는 부모행이 존재하는지를 확인하려는 것이다. FK가 이를 자동으로 확 인해주며, 효율적으로 확인하기 위해 부모 테이블의 인덱스를 활용한다.
 - "FK라고? FK는 데이터베이스를 느리게 만들기 때문에 사용하지 말라고 들었는데?" FK를 사용하지 않는 것을 간단하게 합리화하기 위해 성능 문제를 말하지 만, FK를 사용하지 않으면 성능 문제를 포함해 문제가 해결되기보다는 늘어 난다.
 
 ## 안티패턴 사용이 합당한 경우
-FK 제약조건을 지원하지 않는 데이터베이스(예를 들어, MySQL의 MyISAM 스토리지 엔진 또는 버전 3.6.19 이전의 SQLite)를 사용할 수밖에 없는 경우도 있
-다.이런 경우라면 이 장의 앞부분에서 설명했던 품질 제어 스크립트 같은 것 으로 보완하는 수밖에 없다.
+FK 제약조건을 지원하지 않는 데이터베이스(예를 들어, MySQL의 MyISAM 스토리지 엔진 또는 버전 3.6.19 이전의 SQLite)를 사용할 수밖에 없는 경우도 있다.
+이런 경우라면 이 장의 앞부분에서 설명했던 품질 제어 스크립트 같은 것 으로 보완하는 수밖에 없다.
 관계를 모델링하는 데 FK를 사용할 수 없는 극단적으로 유연한 데이터베이스 설계도 있다. 전통적인 참조 정합성 제약조건을 사용할 수 없다면, 이는 다른 SQL 안티패턴이 사용되고 있음을 나타내는 강력한 징후다. 
 
 ## 해법: 제약조건 선언하기
@@ -617,7 +618,7 @@ FK 제약조건을 지원하지 않는 데이터베이스(예를 들어, MySQL�
 CREATE TABLE Bugs (
     ...
     reported_by BIGINT UNSIGNED NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT ‘NEW‘, 
+    status VARCHAR(20) NOT NULL DEFAULT 'NEW', 
     FOREIGN KEY (reported_by) REFERENCES Accounts(account_id),
     FOREIGN KEY (status) REFERENCES BugStatus(status)
 );
@@ -630,9 +631,9 @@ FK는 애플리케이션 코드로 흉내 낼 수 없는 다른 기능이 있다
 CREATE TABLE Bugs
 (
     reported_by BIGINT UNSIGNED NOT NULL,
-    status      VARCHAR(20)     NOT NULL DEFAULT ‘NEW‘,
+    status      VARCHAR(20)     NOT NULL DEFAULT 'NEW',
     FOREIGN KEY (reported_by) REFERENCES Accounts (account_id)
-        ON UPDATE CASCADEn
+        ON UPDATE CASCADE
         ON DELETE RESTRICT,
     FOREIGN KEY (status) REFERENCES BugStatus (status)
         ON UPDATE CASCADE
@@ -710,7 +711,7 @@ SELECT issue_id, date_reported FROM Issues;
 
 SELECT issue_id, attr_value AS "date_reported"
 FROM IssueAttributes
-WHERE attr_name = ‘date_reported‘;
+WHERE attr_name = 'date_reported';
 ~~~
 EAV 설계를 사용할 때 위 쿼리와 동일한 정보를 얻으려면, IssueAttributes 테이블에서 문자열로 date_reported란 이름의 속성을 가진 행을 꺼내야 한다. 이 쿼리는 더 복잡하고 덜 명확하다.
 

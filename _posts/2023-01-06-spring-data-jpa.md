@@ -1,6 +1,7 @@
 ---
 layout: post
-title: 스프링 데이터 JPA
+title: 실전! 스프링 데이터 JPA
+tags: [spring, jpa, spring-data, database, orm, hibernate]
 ---
 
 ~~~
@@ -397,14 +398,14 @@ spring.data.web.pageable.max-page-size=2000 /# 최대 페이지 사이즈/
 **개별설정**
 ~~~java
 @RequestMapping(value = "/members_page", method = RequestMethod.GET)
-  public String list(@PageableDefault(size = 12, sort = “username”, direction = Sort.Direction.DESC) Pageable pageable) {
+  public String list(@PageableDefault(size = 12, sort = "username", direction = Sort.Direction.DESC) Pageable pageable) {
     ... 
 }
 ~~~
 
 **접두사**
 - 페이징 정보가 둘 이상이면 접두사로 구분 
-- @Qualifier 에 접두사명 추가 "{접두사명}_xxx”
+- @Qualifier 에 접두사명 추가 "{접두사명}_xxx"
 - 예제: /members?member_page=0&order_page=1
 ~~~java
 public String list(
@@ -532,7 +533,7 @@ public interface MemberRepository ... {
 메서드 이름은 자유, 반환 타입으로 인지
 
 ~~~sql
-select m.username from member m where m.username=‘m1’;`
+select m.username from member m where m.username='m1';`
 ~~~
 SQL에서도 select절에서 username만 조회(Projection)하는 것을 확인
 

@@ -1,6 +1,7 @@
 ---
 layout: post
 title: Java final, static
+tags: [java]
 ---
 
 ## final

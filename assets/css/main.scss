@@ -3,7 +3,8 @@
 
 @import "no-style-please";
 
-.w{
+/* ===== BASE STYLES ===== */
+.w {
   max-width: 1024px;
   margin: 0 auto;
   padding: 2rem 1rem;
@@ -13,7 +14,108 @@ li a {
   text-decoration: none;
 }
 
-footer {
+/* Typography Scale - 일관된 글자 크기 설정 */
+body {
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+h1, .site-title {
+  font-size: 2.5rem;
+  line-height: 1.2;
+  margin-top: 0;
+}
+
+h2 {
+  font-size: 2rem;
+  line-height: 1.3;
+  margin-top: 1rem !important;
+}
+
+h3 {
+  font-size: 1.5rem;
+  line-height: 1.4;
+  margin-top: 0;
+}
+
+h4 {
+  font-size: 1.25rem;
+  line-height: 1.4;
+  margin-top: 0;
+}
+
+h5 {
+  font-size: 1.125rem;
+  line-height: 1.5;
+  margin-top: 0;
+}
+
+h6 {
+  font-size: 1rem;
+  line-height: 1.5;
+  margin-top: 0;
+}
+
+/* 모든 헤딩 요소의 margin-top 강제 제거 */
+h1, h2, h3, h4, h5, h6 {
+  margin-top: 1rem !important;
+}
+
+/* Target styles for hash links */
+:target {
+  background-color: #f8fbff;
+  border-left: 3px solid #007acc;
+  padding-left: 1rem;
+  margin-left: -1rem;
+  border-radius: 0 4px 4px 0;
+  transition: all 0.3s ease;
+  animation: gentle-highlight 1.5s ease-out;
+}
+
+@keyframes gentle-highlight {
+  0% {
+    background-color: #e1f0ff;
+    border-left-width: 5px;
+  }
+  100% {
+    background-color: #f8fbff;
+    border-left-width: 3px;
+  }
+}
+
+/* ===== LAYOUT COMPONENTS ===== */
+
+/* Site Header */
+.site-header {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.site-title {
+  margin-bottom: 0.5rem;
+}
+
+.site-description {
+  color: #666;
+  margin-bottom: 1.5rem;
+  font-size: 1.125rem;
+}
+
+/* Site Content Layout */
+.site-content {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+  margin-bottom: 3rem;
+}
+
+/* Sidebar */
+.sidebar {
+  order: 2;
+}
+
+/* Footer */
+footer, .site-footer {
   margin-top: 3rem;
   padding-top: 2rem;
   border-top: 1px solid #e0e0e0;
@@ -21,50 +123,308 @@ footer {
   color: #555;
 }
 
-footer .link-grid {
+.footer-links h3 {
+  margin-bottom: 1rem;
+  font-size: 1rem;
+}
+
+footer .link-grid, .link-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.8rem;
   padding-left: 0;
   margin-top: 0.5rem;
   list-style: none;
 }
 
-footer .link-grid li a {
+footer .link-grid li a, .link-grid li a {
+  color: #007acc;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+footer .link-grid li a:hover, .link-grid li a:hover {
+  text-decoration: underline;
+}
+
+/* ===== POST COMPONENTS ===== */
+
+/* Post Header & Meta */
+.post-header {
+  margin-bottom: 2rem;
+}
+
+.post-title {
+  margin-bottom: 1rem;
+}
+
+.post-meta {
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.post-content {
+  line-height: 1.6;
+  margin-bottom: 3rem;
+  font-size: 1rem;
+}
+
+/* Post Tags */
+.post-tags {
+  margin-left: 1rem;
+}
+
+.post-tags .tag {
+  display: inline-block;
+  background: #f0f0f0;
+  color: #333;
+  padding: 0.2rem 0.5rem;
+  margin: 0 0.3rem 0.3rem 0;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.post-tags .tag:hover {
+  background: #ddd;
+}
+
+/* Post Navigation */
+.post-navigation {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.post-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.nav-previous, .nav-next {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-next {
+  text-align: right;
+}
+
+.nav-label {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.nav-link {
+  color: #007acc;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 1rem;
+}
+
+.nav-link:hover {
+  text-decoration: underline;
+}
+
+/* Post List */
+.post-list {
+  list-style: none;
+  padding: 0;
+}
+
+.post-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+  padding: 0.3rem 0;
+}
+
+.post-date {
+  color: #666;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  min-width: 90px;
+  flex-shrink: 0;
+}
+
+.post-link {
+  color: #333;
+  text-decoration: none;
+  flex: 1;
+  font-size: 1rem;
+}
+
+.post-link:hover {
+  color: #007acc;
+  text-decoration: underline;
+}
+
+/* ===== NAVIGATION COMPONENTS ===== */
+
+/* Breadcrumbs */
+.breadcrumbs {
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.breadcrumbs ol {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.breadcrumbs li:not(:last-child)::after {
+  content: "›";
+  margin: 0 0.5rem;
+  color: #666;
+}
+
+.breadcrumbs a {
+  color: #007acc;
+  text-decoration: none;
+}
+
+.breadcrumbs a:hover {
+  text-decoration: underline;
+}
+
+/* ===== TAG COMPONENTS ===== */
+
+/* Tag Cloud (Sidebar) */
+.tag-cloud {
+  background: #f9f9f9;
+  padding: 1.5rem;
+  border-radius: 5px;
+  margin-bottom: 2rem;
+}
+
+.tag-cloud h3 {
+  margin-top: 1rem !important;
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+}
+
+.tag-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag-item {
+  margin: 0;
+}
+
+.tag-link {
+  display: inline-block;
+  background: #fff;
+  color: #333;
+  padding: 0.3rem 0.7rem;
+  border-radius: 15px;
+  text-decoration: none;
+  font-size: 0.85rem;
+  border: 1px solid #ddd;
+  transition: all 0.2s ease;
+}
+
+.tag-link:hover {
+  background: #007acc;
+  color: white;
+  border-color: #007acc;
+}
+
+.tag-count {
+  opacity: 0.7;
+  font-size: 0.8em;
+}
+
+/* Tags Page */
+.tags-page {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.page-description {
+  color: #666;
+  margin-bottom: 1rem;
+  font-size: 1rem;
+}
+
+.tag-cloud-large {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+
+.tag-cloud-large .tag-link {
+  margin: 0.3rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+.tag-section {
+  margin-bottom: 2rem;
+  padding: 0.8rem;
+  border-bottom: 1px solid #eee;
+  border-radius: 5px;
+  transition: all 0.3s ease;
+}
+
+.tag-section:last-child {
+  border-bottom: none;
+}
+
+.tag-section:target {
+  background: linear-gradient(135deg, #f8fbff 0%, #e6f3ff 100%);
+  border: 1px solid #b3d9ff;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 20px rgba(0, 122, 204, 0.15);
+  transform: translateY(-3px);
+  position: relative;
+}
+
+.tag-section:target::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #007acc, #0099ff);
+  border-radius: 8px 8px 0 0;
+}
+
+.tag-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.tag-section .tag-title h2,
+.tags-page .tag-title h2 {
+  margin-top: 1rem !important;
+  margin-bottom: 0 !important;
+}
+
+.tag-name {
   color: #007acc;
 }
 
+/* ===== UI COMPONENTS ===== */
 
-/* PC 버전: 1025px 이상 */
-@media (min-width: 1025px) {
-  header h1 {
-    font-size: 2rem;
-  }
-
-  header p {
-    font-size: 1.1rem;
-  }
-
-  article h2{
-    font-size: 1.6rem;
-  }
-}
-
-/* 태블릿: 768px ~ 1024px */
-@media (min-width: 768px) and (max-width: 1024px) {
-  header h1 {
-    font-size: 1.8rem;
-  }
-
-  header p {
-    font-size: 1.25rem;
-  }
-
-  article h2 {
-    font-size: 1.4rem;
-  }
-}
-
+/* Theme Toggle */
 #theme-toggle {
   position: fixed;
   bottom: 1rem;
@@ -73,34 +433,342 @@ footer .link-grid li a {
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
+  z-index: 1000;
 }
 
-/* 모바일 (iPhone 14 Pro Max ~ 14 Pro): 376px ~ 767px */
-@media (min-width: 376px) and (max-width: 767px) {
-  header h1 {
-    font-size: 1.6rem;
-  }
+/* ===== RESPONSIVE DESIGN ===== */
 
-  header p {
-    font-size: 1.15rem;
+/* Ultra-wide screens: 1400px and up */
+@media (min-width: 1400px) {
+  .w {
+    max-width: 1400px;
   }
-
-  article h2 {
-    font-size: 1.3rem;
+  
+  .site-content {
+    grid-template-columns: 3fr 1fr;
+    gap: 4rem;
+  }
+  
+  /* Typography scaling for ultra-wide */
+  h1, .site-title {
+    font-size: 3rem;
+    margin-top: 1rem !important;
+  }
+  
+  h2 {
+    font-size: 2.25rem;
+    margin-top: 1rem !important;
+  }
+  
+  .site-description {
+    font-size: 1.25rem;
   }
 }
 
-/* 모바일 (iPhone SE 및 그 이하): 375px 이하 */
-@media (max-width: 375px) {
-  header h1 {
-    font-size: 1.4rem;
+/* Large Desktop: 1200px - 1399px */
+@media (min-width: 1200px) and (max-width: 1399px) {
+  .w {
+    max-width: 1200px;
+    padding: 3rem 2rem;
   }
+  
+  .site-content {
+    grid-template-columns: 2fr 1fr;
+    gap: 3rem;
+  }
+  
+  .sidebar {
+    order: 1;
+  }
+  
+  .post-nav {
+    gap: 3rem;
+  }
+  
+  /* Typography scaling for large desktop */
+  h1, .site-title {
+    font-size: 2.75rem;
+    margin-top: 1rem !important;
+  }
+  
+  h2 {
+    font-size: 2.125rem;
+    margin-top: 1rem !important;
+  }
+  
+  .site-description {
+    font-size: 1.2rem;
+  }
+}
 
-  header p {
+/* Desktop: 1025px - 1199px */
+@media (min-width: 1025px) and (max-width: 1199px) {
+  .site-content {
+    grid-template-columns: 2fr 1fr;
+    gap: 2.5rem;
+  }
+  
+  /* Typography scaling for desktop */
+  h1, .site-title {
+    font-size: 2.5rem;
+    margin-top: 1rem !important;
+  }
+  
+  h2 {
+    font-size: 2rem;
+    margin-top: 1rem !important;
+  }
+  
+  .site-description {
+    font-size: 1.125rem;
+  }
+}
+
+/* Tablet: 768px - 1024px */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .w {
+    padding: 2rem 1.5rem;
+  }
+  
+  .site-content {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  
+  .sidebar {
+    order: 2;
+  }
+  
+  .post-nav {
+    gap: 1.5rem;
+  }
+  
+  .post-date {
+    min-width: 80px;
+  }
+  
+  .link-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  /* Typography scaling for tablet */
+  h1, .site-title {
+    font-size: 2.25rem;
+    margin-top: 1rem !important;
+  }
+  
+  h2 {
+    font-size: 1.75rem;
+    margin-top: 1rem !important;
+  }
+  
+  h3 {
+    font-size: 1.375rem;
+    margin-top: 1rem !important;
+  }
+  
+  .site-description {
+    font-size: 1.1rem;
+  }
+  
+  .post-content {
     font-size: 1rem;
   }
+  
+  .nav-link {
+    font-size: 0.95rem;
+  }
+}
 
-  article h2 {
-    font-size: 1.1rem;
+/* Mobile Large: 480px - 767px */
+@media (min-width: 480px) and (max-width: 767px) {
+  .w {
+    padding: 1.5rem 1rem;
+  }
+  
+  .post-nav {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  
+  .nav-next {
+    text-align: left;
+  }
+  
+  .breadcrumbs {
+    font-size: 0.85rem;
+  }
+  
+  .tag-cloud {
+    padding: 1rem;
+  }
+  
+  .tag-cloud-large {
+    padding: 1.2rem;
+  }
+  
+  .post-date {
+    min-width: 70px;
+    font-size: 0.8rem;
+  }
+  
+  .link-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  
+  .tag-section:target {
+    padding: 1.2rem;
+    margin: 0;
+  }
+  
+  /* Typography scaling for mobile large */
+  h1, .site-title {
+    font-size: 2rem;
+    margin-top: 1rem !important;
+  }
+  
+  h2 {
+    font-size: 1.5rem;
+    margin-top: 1rem !important;
+  }
+  
+  h3 {
+    font-size: 1.25rem;
+    margin-top: 1rem !important;
+  }
+  
+  .site-description {
+    font-size: 1rem;
+  }
+  
+  .post-content {
+    font-size: 0.95rem;
+  }
+  
+  .nav-link {
+    font-size: 0.9rem;
+  }
+  
+  .post-link {
+    font-size: 0.95rem;
+  }
+}
+
+/* Mobile Small: 479px and below */
+@media (max-width: 479px) {
+  .w {
+    padding: 1rem 0.8rem;
+  }
+  
+  .post-nav {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .nav-next {
+    text-align: left;
+  }
+  
+  .breadcrumbs {
+    font-size: 0.8rem;
+  }
+  
+  .breadcrumbs li:not(:last-child)::after {
+    margin: 0 0.3rem;
+  }
+  
+  .tag-cloud {
+    padding: 0.8rem;
+  }
+  
+  .tag-cloud h3 {
+    font-size: 1rem;
+    margin-top: 1rem !important;
+  }
+  
+  .tag-link {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+  }
+  
+  .tag-cloud-large {
+    padding: 1rem;
+  }
+  
+  .tag-cloud-large .tag-link {
+    margin: 0.2rem;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+  }
+  
+  .post-date {
+    min-width: 60px;
+    font-size: 0.75rem;
+  }
+  
+  .post-item {
+    gap: 0.8rem;
+  }
+  
+  .link-grid {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+  }
+  
+  #theme-toggle {
+    bottom: 0.5rem;
+    right: 0.5rem;
+    font-size: 1.3rem;
+  }
+  
+  .tag-section {
+    padding: 0.6rem;
+  }
+  
+  .tag-section:target {
+    padding: 1rem;
+    margin: 0;
+  }
+  
+  /* Typography scaling for mobile small */
+  h1, .site-title {
+    font-size: 1.75rem;
+    margin-top: 1rem !important;
+  }
+  
+  h2 {
+    font-size: 1.375rem;
+    margin-top: 1rem !important;
+  }
+  
+  h3 {
+    font-size: 1.125rem;
+    margin-top: 1rem !important;
+  }
+  
+  h4 {
+    font-size: 1rem;
+    margin-top: 1rem !important;
+  }
+  
+  .site-description {
+    font-size: 0.9rem;
+  }
+  
+  .post-content {
+    font-size: 0.9rem;
+  }
+  
+  .nav-link {
+    font-size: 0.85rem;
+  }
+  
+  .post-link {
+    font-size: 0.9rem;
+  }
+  
+  footer .link-grid li a {
+    font-size: 0.85rem;
   }
 }

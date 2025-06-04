@@ -1,0 +1,16 @@
+{%- assign tags = site.tags | sort -%}
+{%- if tags.size > 0 -%}
+<div class="tag-cloud">
+  <h3>태그</h3>
+  <ul class="tag-list">
+    {%- for tag in tags -%}
+      <li class="tag-item">
+        <a href="{{ '/tags.html#' | append: tag[0] | relative_url }}" class="tag-link">
+          {{ tag[0] }}
+          <span class="tag-count">({{ tag[1].size }})</span>
+        </a>
+      </li>
+    {%- endfor -%}
+  </ul>
+</div>
+{%- endif -%} 

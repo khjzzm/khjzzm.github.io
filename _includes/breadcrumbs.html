@@ -1,0 +1,15 @@
+{%- unless page.url == '/' -%}
+<nav class="breadcrumbs" aria-label="브레드크럼">
+  <ol>
+    <li><a href="{{ '/' | relative_url }}">홈</a></li>
+    {%- if page.layout == 'post' -%}
+      <li><a href="{{ '/archive.html' | relative_url }}">포스트</a></li>
+      <li aria-current="page">{{ page.title }}</li>
+    {%- elsif page.layout == 'archive' -%}
+      <li aria-current="page">{{ page.title }}</li>
+    {%- else -%}
+      <li aria-current="page">{{ page.title | default: "페이지" }}</li>
+    {%- endif -%}
+  </ol>
+</nav>
+{%- endunless -%} 
