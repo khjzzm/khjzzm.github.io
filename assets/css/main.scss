@@ -1439,3 +1439,20 @@ body[a="dark"] .post-content blockquote {
   background: #1a1a1a;
   border-left-color: #64b4ff;
 }
+
+/* ===== COMMENTS ===== */
+.comments {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border, #eee);
+}
+
+.comments h3 {
+  font-size: 1.1rem;
+  margin-bottom: 1.5rem;
+  color: var(--fg, #333);
+}
+
+.giscus {
+  margin-top: 1rem;
+}
