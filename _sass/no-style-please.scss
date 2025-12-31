@@ -1,36 +1,76 @@
-// -------------- THEME SWITCHER -------------- //
-@mixin dark-appearance {
-  filter: invert(1);
-  img {
-    filter: invert(1);
+// -------------- CSS VARIABLES -------------- //
+:root {
+  --bg: white;
+  --fg: black;
+  --code-bg: #1a1a1a;
+  --code-fg: #f8f8f2;
+  --border: black;
+  --highlight: yellow;
+  --link: #0066cc;
+  --link-visited: #551a8b;
+}
 
-    &.ioda { filter: invert(0); }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1a1a;
+    --fg: #e0e0e0;
+    --code-bg: #2d2d2d;
+    --code-fg: #f8f8f2;
+    --border: #555;
+    --highlight: #3a3a00;
+    --link: #6db3f2;
+    --link-visited: #b794f4;
   }
 }
 
-body[a="dark"] { @include dark-appearance; }
+// Manual dark mode override
+body[a="dark"] {
+  --bg: #1a1a1a;
+  --fg: #e0e0e0;
+  --code-bg: #2d2d2d;
+  --code-fg: #f8f8f2;
+  --border: #555;
+  --highlight: #3a3a00;
+  --link: #6db3f2;
+  --link-visited: #b794f4;
+}
 
-
-@media (prefers-color-scheme: dark) {
-  body[a="auto"] { @include dark-appearance; }
+// Manual light mode override
+body[a="light"] {
+  --bg: white;
+  --fg: black;
+  --code-bg: #1a1a1a;
+  --code-fg: #f8f8f2;
+  --border: black;
+  --highlight: yellow;
+  --link: #0066cc;
+  --link-visited: #551a8b;
 }
 // -------------------------------------------- //
 
-// bg color is also needed in html in order to
-// block body's background propagation
-// see: https://stackoverflow.com/a/61265706
-html, body { background: white; }
+html, body { 
+  background: var(--bg); 
+  color: var(--fg);
+}
 
 html { height: 100%; }
 
 body {
-  color: black;
   font-family: monospace;
   font-size: 16px;
   line-height: 1.4;
   margin: 0;
   min-height: 100%;
   overflow-wrap: break-word;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+a {
+  color: var(--link);
+  
+  &:visited {
+    color: var(--link-visited);
+  }
 }
 
 .post-meta { text-align: right; }
@@ -43,10 +83,10 @@ p { margin: 1rem 0; }
 
 li { margin: 0.4rem 0; }
 
-*:target { background: yellow; }
+*:target { background: var(--highlight); }
 
 .w {
-  max-width: 640px;
+  max-width: 800px;
   margin: 0 auto;
   padding: 4rem 2rem;
 }
@@ -54,6 +94,7 @@ li { margin: 0.4rem 0; }
 hr {
   text-align: center;
   border: 0;
+  color: var(--fg);
 
   &:before { content: '/////' }
   &:after { content: attr(data-content) '/////' }
@@ -62,14 +103,14 @@ hr {
 table { width: 100%; }
 
 table, th, td {
-  border: thin solid black;
+  border: thin solid var(--border);
   border-collapse: collapse;
   padding: 0.4rem;
 }
 
 code {
-  color: white;
-  background: black;
+  color: var(--code-fg);
+  background: var(--code-bg);
 }
 
 div.highlighter-rouge code {
@@ -81,7 +122,7 @@ div.highlighter-rouge code {
 
 blockquote {
   font-style: italic;
-  border: thin solid black;
+  border: thin solid var(--border);
   padding: 1rem;
 
   p { margin: 0; }
@@ -91,4 +132,15 @@ img {
   max-width: 100%;
   display: block;
   margin: 0 auto;
+}
+
+// Mobile responsive
+@media (max-width: 768px) {
+  .w {
+    padding: 2rem 1rem;
+  }
+
+  h2, h3, h4, h5, h6 {
+    margin-top: 2rem;
+  }
 }

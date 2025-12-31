@@ -1,6 +1,6 @@
 ---
 layout: post
-title: generate_statistics
+title: Hibernate 통계 설정 (generate_statistics)
 ---
 
 ~~~mysql

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: required a single bean 빈 중복
+title: Spring 빈 중복 주입 해결
 tags: [spring]
 ---
 

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: AWS-Lambda
+title: AWS Lambda
 ---
 
 - Serverless의 주축을 담당

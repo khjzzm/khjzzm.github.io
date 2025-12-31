@@ -1,6 +1,6 @@
 ---
 layout: post
-title: org.hibernate.annotations.Immutable;
+title: Hibernate Immutable 엔티티
 ---
 
 불변 엔터티는 다음 계약 사항을 준수해야 한다.
