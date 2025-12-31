@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 달라이브 출석체크 이벤트 전략패턴 적용
-tags: [design-pattern, interface]
+tags: [design-pattern]
 ---
 
 # 출석체크(방송/청취) 이벤트 코드 리뷰

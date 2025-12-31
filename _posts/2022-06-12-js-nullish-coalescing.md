@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 자바스크립트 Optional Chaining & Nullish Coalescing 
-tags: [javascript, es2020, optional-chaining, nullish-coalescing]
+tags: [javascript]
 ---
 
 ## Optional Chaining (?.) 연산자

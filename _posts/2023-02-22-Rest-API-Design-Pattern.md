@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 일관된 REST API 설계 원칙
-tags: [rest-api, web, http, api-design, architecture, web-development]
+tags: [architecture]
 ---
 
 ## 1. REST 소개

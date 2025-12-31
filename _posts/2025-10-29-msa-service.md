@@ -1,7 +1,7 @@
 ---
 layout: post
 title: Maintenance 모듈 설계 정리 (with DTO vs Domain Validation) 
-tags: [domain, clean-code]
+tags: [architecture]
 ---
 
 ## 전체 개요

@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 템플릿 메소드 패턴
-tags: [java, design-pattern, oop, gof, inheritance, template-method]
+tags: [java, design-pattern]
 ---
 
 ## 변하는 것과 변하지 않는 것을 분리

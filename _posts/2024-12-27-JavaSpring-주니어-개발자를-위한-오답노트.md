@@ -1,7 +1,7 @@
 ---
 layout: post
 title: Java/Spring 주니어 개발자를 위한 오답노트
-tags: [java, spring, oop, design-pattern, clean-code, coding-convention, architecture]
+tags: [java, spring]
 ---
 
 순차 지향 프로그래밍과 절차 지향 프로그래밍의 차으를 설명하실 수 있나요?

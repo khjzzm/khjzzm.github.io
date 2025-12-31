@@ -1,7 +1,7 @@
 ---
 layout: post
 title: JPA 성능 최적화
-tags: [jpa, hibernate, performance, database, orm, optimization]
+tags: [jpa, performance]
 ---
 
 

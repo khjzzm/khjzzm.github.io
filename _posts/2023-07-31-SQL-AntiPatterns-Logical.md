@@ -1,7 +1,7 @@
 ---
 layout: post
 title: SQL AntiPatterns - 논리적 데이터베이스 설계 안티패턴
-tags: [sql, database, antipattern, database-design, data-modeling, normalization]
+tags: [database]
 ---
 
 ## 논리적 데이터베이스 설계 안티패턴

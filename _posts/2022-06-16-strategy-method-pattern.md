@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 전략 패턴
-tags: [java, design-pattern, oop, gof, strategy-pattern, interface]
+tags: [java, design-pattern]
 ---
 
 전략 패턴은 변하지 않는 부분을 Context 라는 곳에 두고, 변하는 부분을 Strategy 라는 인터페이스를

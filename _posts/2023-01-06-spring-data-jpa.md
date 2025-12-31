@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 실전! 스프링 데이터 JPA
-tags: [spring, jpa, spring-data, database, orm, hibernate]
+tags: [spring, jpa]
 ---
 
 ~~~

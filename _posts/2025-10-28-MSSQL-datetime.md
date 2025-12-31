@@ -1,7 +1,7 @@
 ---
 layout: post
 title: MSSQL `datetime` 반올림 이슈 대응 
-tags: [database, sql]
+tags: [database]
 ---
 
 MSSQL의 `datetime` 타입은 **밀리초 단위로 정밀하게 저장되지 않는다.**  
