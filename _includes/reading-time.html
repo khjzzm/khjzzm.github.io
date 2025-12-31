@@ -1,0 +1,6 @@
+{%- assign words = include.content | strip_html | number_of_words -%}
+{%- assign reading_time = words | divided_by: 50 -%}
+{%- if reading_time < 1 -%}
+  {%- assign reading_time = 1 -%}
+{%- endif -%}
+<span class="reading-time">{{ reading_time }}min</span>

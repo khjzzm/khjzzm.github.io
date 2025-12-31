@@ -2,12 +2,15 @@
 layout: default
 ---
 
+<div class="reading-progress-bar"></div>
+
 {%- include breadcrumbs.html -%}
 
 <article class="post">
   <header class="post-header">
     <p class="post-meta">
       <time datetime="{{ page.date }}">{{ page.date | date: site.theme_config.date_format }}</time>
+      {%- include reading-time.html content=content -%}
       {%- if page.tags -%}
         <span class="post-tags">
           {%- for tag in page.tags -%}
@@ -16,18 +19,22 @@ layout: default
         </span>
       {%- endif -%}
     </p>
-    
+
     <h1 class="post-title">{{ page.title }}</h1>
   </header>
+
+  {%- include toc.html -%}
 
   <div class="post-content">
     {{ content }}
   </div>
 
+  {%- include related-posts.html -%}
+
   <footer class="post-navigation">
     {%- assign prev_post = page.previous -%}
     {%- assign next_post = page.next -%}
-    
+
     {%- if prev_post or next_post -%}
     <nav class="post-nav" aria-label="포스트 네비게이션">
       {%- if prev_post -%}
@@ -36,7 +43,7 @@ layout: default
           <a href="{{ prev_post.url | relative_url }}" class="nav-link">{{ prev_post.title }}</a>
         </div>
       {%- endif -%}
-      
+
       {%- if next_post -%}
         <div class="nav-next">
           <span class="nav-label">다음 포스트</span>
@@ -49,3 +56,21 @@ layout: default
     {%- include back_link.html -%}
   </footer>
 </article>
+
+<script>
+(function() {
+  var progressBar = document.querySelector('.reading-progress-bar');
+  if (!progressBar) return;
+
+  function updateProgress() {
+    var scrollTop = window.scrollY;
+    var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    var progress = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    progressBar.style.width = Math.min(100, Math.max(0, progress)) + '%';
+  }
+
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  window.addEventListener('resize', updateProgress);
+  updateProgress();
+})();
+</script>

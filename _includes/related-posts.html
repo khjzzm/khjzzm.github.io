@@ -1,0 +1,34 @@
+{%- if page.tags.size > 0 -%}
+  {%- assign max_related = 4 -%}
+  {%- assign related_posts = "" | split: "" -%}
+
+  {%- for post in site.posts -%}
+    {%- if post.url != page.url -%}
+      {%- assign common_tags = 0 -%}
+      {%- for tag in post.tags -%}
+        {%- if page.tags contains tag -%}
+          {%- assign common_tags = common_tags | plus: 1 -%}
+        {%- endif -%}
+      {%- endfor -%}
+
+      {%- if common_tags > 0 -%}
+        {%- assign related_posts = related_posts | push: post -%}
+      {%- endif -%}
+    {%- endif -%}
+  {%- endfor -%}
+
+  {%- if related_posts.size > 0 -%}
+    {%- assign related_posts = related_posts | slice: 0, max_related -%}
+<section class="related-posts">
+  <h3>관련 글</h3>
+  <ul>
+    {%- for post in related_posts -%}
+    <li>
+      <a href="{{ post.url | relative_url }}">{{ post.title }}</a>
+      <time datetime="{{ post.date }}">{{ post.date | date: "%Y-%m-%d" }}</time>
+    </li>
+    {%- endfor -%}
+  </ul>
+</section>
+  {%- endif -%}
+{%- endif -%}

@@ -24,7 +24,7 @@ title: 사진으로 보는 2025년
 ![6](https://khjzzm.github.io/assets/image/2025/6-1.jpg)
 ## 7월
 ![7](https://khjzzm.github.io/assets/image/2025/7-0.jpg)
-![7](https://khjzzm.github.io/assets/image/2025/7-1.jpg
+![7](https://khjzzm.github.io/assets/image/2025/7-1.jpg)
 ## 8월
 ![8](https://khjzzm.github.io/assets/image/2025/8-0.jpg)
 ![8](https://khjzzm.github.io/assets/image/2025/8-1.jpg)

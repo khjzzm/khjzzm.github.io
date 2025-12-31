@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://khjzzm.github.io/sitemap.xml
