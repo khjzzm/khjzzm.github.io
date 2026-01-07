@@ -216,43 +216,144 @@ public class UserService {
 }
 ```
 
-### 3. readOnly = true는 성능 힌트일 뿐, 쓰기를 막지는 않음
+### 3. readOnly = true의 실제 동작 - 환경별 완전 정리
+
+`readOnly = true`의 동작은 **환경에 따라 다르다**. "성능 힌트일 뿐"이라는 말도 맞고, "쓰기가 막힌다"는 말도 맞다 - 상황에 따라 다르기 때문이다.
+
+#### Spring이 내부적으로 하는 일
 
 ```java
-@Transactional(readOnly = true)
-public void updateUser(User user) {
-    userRepository.save(user);  // 실행됨! 에러 안남!
-}
+// 1. JDBC Connection 레벨
+connection.setReadOnly(true);
+
+// 2. JPA/Hibernate 레벨 (JPA 사용 시)
+session.setDefaultReadOnly(true);
+session.setFlushMode(FlushMode.MANUAL);
 ```
 
-`readOnly = true`가 실제로 하는 일:
+#### 환경별 동작 차이
 
-| 항목             | 설명                                        |
-|------------------|---------------------------------------------|
-| Hibernate Flush  | MANUAL로 설정 → 변경감지(Dirty Checking) 비활성화 |
-| 스냅샷 저장      | 엔티티 스냅샷 저장 안함 → 메모리 절약       |
-| DB 힌트          | 일부 DB는 읽기 복제본으로 라우팅             |
-
-그러나:
+**1) JPA/Hibernate 환경 - 단일 DB**
 
 ```java
 @Transactional(readOnly = true)
 public void update() {
     User user = userRepository.findById(1L);
-    user.setName("변경됨");  // 무시됨 (Flush 안함)
+    user.setName("변경됨");  // ❌ 무시됨 (Dirty Checking 비활성화)
 
-    userRepository.save(user);  // 하지만 이건 실행됨!
+    userRepository.save(user);  // ✅ 실행됨!
 }
 ```
 
-실제 동작 차이 정리:
+| 케이스 | readOnly=true 일 때 |
+|--------|---------------------|
+| 엔티티 수정 후 자동 flush | ❌ 막힘 (Dirty Checking 비활성화) |
+| `repository.save()` 호출 | ✅ 실행됨 |
+| Native UPDATE 쿼리 | ✅ 실행됨 |
+| JPQL UPDATE 쿼리 | ✅ 실행됨 |
 
-| 케이스                  | readOnly=true 일 때 |
-|-------------------------|---------------------|
-| 엔티티 수정 후 자동 flush | 막힘               |
-| repository.save() 호출  | 실행됨              |
-| Native UPDATE 쿼리      | 실행됨              |
-| JPQL UPDATE 쿼리        | 실행됨              |
+**2) MyBatis 환경 - 단일 DB**
+
+MyBatis는 JPA의 Dirty Checking이 없으므로 동작이 다르다.
+
+```java
+@Transactional(readOnly = true)
+public void update() {
+    mapper.update(entity);  // DB 드라이버에 따라 다름
+}
+```
+
+| DB/드라이버 | readOnly=true에서 쓰기 |
+|-------------|------------------------|
+| MySQL (기본) | ✅ 실행됨 (힌트로만 사용) |
+| PostgreSQL (기본) | ✅ 실행됨 |
+| Oracle | ✅ 실행됨 |
+| H2 | ✅ 실행됨 |
+
+대부분의 경우 **성능 힌트로만 동작**하고, 쓰기를 막지 않는다.
+
+**3) Read Replica 라우팅 환경 (AWS Aurora 등)**
+
+`AbstractRoutingDataSource`로 라우팅을 구성한 경우, 상황이 완전히 달라진다.
+
+```java
+public class ReplicationRoutingDataSource extends AbstractRoutingDataSource {
+    @Override
+    protected Object determineCurrentLookupKey() {
+        boolean isReadOnly = TransactionSynchronizationManager
+            .isCurrentTransactionReadOnly();
+        return isReadOnly ? "replica" : "primary";
+    }
+}
+```
+
+```
+readOnly = true  → Read Replica(Reader)로 라우팅 → 물리적으로 쓰기 불가
+readOnly = false → Primary(Writer)로 라우팅 → 쓰기 가능
+```
+
+```java
+@Transactional(readOnly = true)
+public void update() {
+    mapper.update(entity);  // ❌ Read Replica로 가서 실패!
+}
+```
+
+이 환경에서는 쓰기 메서드에 반드시 `@Transactional`을 명시해야 한다.
+
+**4) 일부 DB 드라이버 - 엄격 모드**
+
+특정 드라이버나 설정에서는 `setReadOnly(true)` 시 쓰기를 차단한다.
+
+```java
+// MySQL - 특정 설정
+jdbc:mysql://host:3306/db?readOnlyPropagatesToServer=true
+```
+
+```
+SQLException: Connection is read-only.
+Queries leading to data modification are not allowed.
+```
+
+#### 전체 환경별 정리
+
+| 환경 | readOnly=true에서 쓰기 | 이유 |
+|------|------------------------|------|
+| JPA + 단일 DB (엔티티 수정) | ❌ 무시됨 | Dirty Checking 비활성화 |
+| JPA + 단일 DB (save/쿼리) | ✅ 실행됨 | 성능 힌트일 뿐 |
+| MyBatis + 단일 DB | ✅ 실행됨 | 성능 힌트일 뿐 |
+| Read Replica 라우팅 | ❌ 실패 | 물리적으로 Replica로 라우팅 |
+| 엄격 모드 드라이버 | ❌ 예외 | 드라이버가 차단 |
+
+#### 실무 권장사항
+
+```java
+@Service
+@Transactional(readOnly = true)  // 클래스 기본: 읽기 전용
+public class UserService {
+
+    // 조회 메서드 - 그대로
+    public User getUser() { }
+    public List<User> findAll() { }
+
+    // 쓰기 메서드 - 반드시 명시
+    @Transactional  // readOnly = false
+    public void create() { }
+
+    @Transactional
+    public void update() { }
+
+    @Transactional
+    public void delete() { }
+}
+```
+
+왜 쓰기 메서드에 `@Transactional`을 명시해야 하는가?
+
+1. **Read Replica 환경 대비**: 현재는 단일 DB라도, AWS 이전 시 문제 발생
+2. **의도 명확화**: 이 메서드가 쓰기 작업임을 명시
+3. **JPA Dirty Checking**: readOnly=true면 엔티티 변경이 무시될 수 있음
+4. **안전성**: 환경이 바뀌어도 코드 수정 불필요
 
 ---
 
