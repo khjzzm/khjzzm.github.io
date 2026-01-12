@@ -1,6 +1,7 @@
 ---
 layout: post
 title: docker 이미지
+tags: [docker]
 ---
 
 # 이미지란

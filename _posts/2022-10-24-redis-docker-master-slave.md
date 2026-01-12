@@ -1,6 +1,7 @@
 ---
 layout: post
 title: redis-docker Master/Slave 구성
+tags: [docker, redis]
 ---
 
 ## redis.conf 파일 작성

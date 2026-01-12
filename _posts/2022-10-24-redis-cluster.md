@@ -1,6 +1,7 @@
 ---
 layout: post
 title: redis-docker cluster 구성
+tags: [docker, redis]
 ---
 
 ## redis.conf 파일 작성

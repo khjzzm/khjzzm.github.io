@@ -1,6 +1,7 @@
 ---
 layout: post
 title: docker 기본 명령어
+tags: [docker]
 ---
 
 ## 도커 기본 명령어

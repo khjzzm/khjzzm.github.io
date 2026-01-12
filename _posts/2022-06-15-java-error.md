@@ -1,5 +1,6 @@
 ---
 layout: post
+category: devlog
 title: 자바 예외처리
 tags: [java]
 ---

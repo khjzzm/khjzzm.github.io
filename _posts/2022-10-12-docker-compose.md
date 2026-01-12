@@ -1,6 +1,7 @@
 ---
 layout: post
 title: docker 컴포즈
+tags: [docker]
 ---
 
 

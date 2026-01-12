@@ -1,6 +1,7 @@
 ---
 layout: post
 title: 여보야 런치 도커
+tags: [docker]
 ---
 
 ## dockerfile

@@ -1,5 +1,6 @@
 ---
 layout: post
+category: devlog
 title: 프레임워크와 라이브러리의 차이
 ---
 
