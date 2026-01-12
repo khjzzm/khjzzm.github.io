@@ -523,17 +523,19 @@ public JpaItemWriter<Customer> jpaWriter(EntityManagerFactory emf) {
 ```java
 @Bean
 public FlatFileItemWriter<Customer> fileWriter() {
+    BeanWrapperFieldExtractor<Customer> fieldExtractor = new BeanWrapperFieldExtractor<>();
+    fieldExtractor.setNames(new String[]{"id", "name", "email"});
+
+    DelimitedLineAggregator<Customer> lineAggregator = new DelimitedLineAggregator<>();
+    lineAggregator.setDelimiter(",");
+    lineAggregator.setFieldExtractor(fieldExtractor);
+
     return new FlatFileItemWriterBuilder<Customer>()
             .name("customerFileWriter")
             .resource(new FileSystemResource("output/customers.csv"))
             .encoding("UTF-8")
             .headerCallback(writer -> writer.write("ID,NAME,EMAIL"))
-            .lineAggregator(new DelimitedLineAggregator<>() {{
-                setDelimiter(",");
-                setFieldExtractor(new BeanWrapperFieldExtractor<>() {{
-                    setNames(new String[]{"id", "name", "email"});
-                }});
-            }})
+            .lineAggregator(lineAggregator)
             .footerCallback(writer -> writer.write("Total: " + count))
             .build();
 }
