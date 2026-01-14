@@ -1,9 +1,42 @@
 ---
 layout: post
-title: Spring Cloud Config와 AWS Secrets Manager로 설정 관리하기 
+title: Spring Cloud Config와 AWS Secrets Manager로 설정 관리하기
+tags: [spring, aws, architecture]
 ---
 
-## 실행 순서
+## 개요
+
+Spring Cloud Config Server와 AWS Secrets Manager를 통합한 중앙 집중식 설정 관리 구조를 정리한다.
+일반 설정은 Git 저장소에서 관리하고, 민감한 정보(비밀번호, 인증키 등)는 AWS Secrets Manager에서 관리하는 방식이다.
+
+## 전체 아키텍처
+
+```
+┌─────────────────┐     GET /{app}/{profile}     ┌──────────────────┐
+│ 클라이언트       │ ──────────────────────────▶ │ Config Server    │
+│ (각 서비스)      │                              │ (8888)           │
+└─────────────────┘                              └────────┬─────────┘
+       ▲                                                  │
+       │                                                  │ 1. Git에서 설정 로드
+       │                                                  ▼
+       │                                         ┌──────────────────┐
+       │                                         │ cloud-config-repo │
+       │                                         │ (Git 저장소)       │
+       │                                         └──────────────────┘
+       │                                                  │
+       │                                                  │ 2. ${secrets@...} 치환
+       │                                                  ▼
+       │                                         ┌──────────────────┐
+       │                                         │ AWS Secrets      │
+       │                                         │ Manager          │
+       │                                         └──────────────────┘
+       │                                                  │
+       └────────────────── 치환된 설정 응답 ──────────────┘
+```
+
+## bootstrap.yml vs application.yml
+
+### 실행 순서
 
 ```
 bootstrap.yml → application.yml
@@ -11,9 +44,7 @@ bootstrap.yml → application.yml
 
 **bootstrap.yml**이 먼저 로드되고, 그 다음 **application.yml**이 로드된다.
 
----
-
-## bootstrap.yml
+### bootstrap.yml
 
 **역할:** 애플리케이션 컨텍스트가 시작되기 **전에** 필요한 설정
 
@@ -26,16 +57,14 @@ bootstrap.yml → application.yml
 ```yaml
 spring:
   application:
-    name: app-scheduler
+    name: order-api
   cloud:
     config:
       uri: http://config-server:8888
       fail-fast: true
 ```
 
----
-
-## application.yml
+### application.yml
 
 **역할:** 애플리케이션의 **일반적인** 설정
 
@@ -48,33 +77,23 @@ spring:
 ```yaml
 server:
   port: 8081
-
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:54321/mydb
-
-app:
-  scheduler:
-    job:
-      enabled: true
-      cron: '0/5 * * * * ?'
+logging:
+  level:
+    root: info
+    com.example: debug
 ```
 
----
-
-## 왜 분리되어 있는가?
+### 왜 분리되어 있는가?
 
 Spring Cloud Config를 사용할 때:
 
-1. **bootstrap.yml**: "Config Server 어디 있어?" 를 알려줌
+1. **bootstrap.yml**: "Config Server 어디 있어?"를 알려줌
 2. Config Server에서 설정을 가져옴
 3. **application.yml**: 로컬 설정과 병합됨
 
 Config Server를 사용하지 않으면 bootstrap.yml은 필요 없다.
 
----
-
-## bootstrap.yml이 먼저 실행되는 원리
+### bootstrap.yml이 먼저 실행되는 원리
 
 **Spring Boot 자체의 기본 설정이 아니다.** `spring-cloud-context` 라이브러리가 이 동작을 제공한다.
 
@@ -86,9 +105,7 @@ spring-cloud-starter-config
 
 `BootstrapApplicationListener` 클래스가 bootstrap.yml을 먼저 로드하는 역할을 한다.
 
----
-
-## Spring Boot 2.4 이후 변경사항
+### Spring Boot 2.4 이후 변경사항
 
 Spring Boot 2.4부터는 bootstrap.yml 지원이 **기본 비활성화**되었다.
 
@@ -100,9 +117,7 @@ implementation 'org.springframework.cloud:spring-cloud-starter-bootstrap'
 
 또는 `spring.cloud.bootstrap.enabled=true` 설정 필요.
 
----
-
-## 정리
+### 설정 파일 비교
 
 | 구분 | bootstrap.yml | application.yml |
 |------|---------------|-----------------|
@@ -112,51 +127,79 @@ implementation 'org.springframework.cloud:spring-cloud-starter-bootstrap'
 | 필수 여부 | Config Server 사용 시에만 필요 | 항상 필요 |
 | Boot 2.4+ | 별도 의존성 필요 | 기본 지원 |
 
-Spring Boot 2.4 미만에서는 `spring-cloud-starter-config`만 있으면 자동으로 bootstrap.yml을 먼저 읽는다.
+## 프로젝트 구조
 
----
+두 개의 프로젝트로 구성된다.
 
-## 실제 프로젝트 적용 사례
+### 1. cloud-config (Config Server)
 
-### 프로파일 기반 Config Server 활성화
+설정을 배포하는 서버 애플리케이션이다.
 
-실무에서는 로컬 개발과 운영 환경을 분리하기 위해 **프로파일 기반으로 Config Server 연동을 제어**한다.
+```
+cloud-config/
+├── config-server/
+│   ├── src/main/java/.../
+│   │   ├── CloudConfigServerApplication.java
+│   │   ├── advice/
+│   │   │   └── AWSSecretsManagerAdvice.java    # 설정값 치환 로직
+│   │   ├── config/
+│   │   │   └── AWSSecretsManagerConfig.java    # AWS SDK 설정
+│   │   └── service/
+│   │       └── AWSSecretsManagerServiceImpl.java
+│   └── src/main/resources/
+│       ├── application.yml     # 서버 설정 (포트: 8888)
+│       └── bootstrap.yml
+└── test-client/                # 테스트용 클라이언트
+```
+
+### 2. cloud-config-repo (설정 저장소)
+
+실제 설정 파일들이 저장된 Git 저장소다.
+
+```
+cloud-config-repo/
+├── config/                     # 운영 환경 설정
+│   ├── order/
+│   │   ├── order-api.yml
+│   │   └── application-order.yml
+│   ├── payment/
+│   ├── notification/
+│   └── ...
+├── config-staging/             # 스테이징 환경 설정
+└── config-test/                # 테스트 환경 설정
+```
+
+## 핵심 연결 설정
+
+### Config Server → Git 저장소
+
+`config-server/src/main/resources/application.yml`:
 
 ```yaml
-# bootstrap.yml
-spring:
-  application:
-    name: order-service
-  cloud:
-    config:
-      enabled: false  # 기본: 비활성화 (로컬 개발용)
-
----
-spring.profiles: cloudconfig  # 운영 환경에서만 활성화
+server:
+  port: 8888
 spring:
   cloud:
     config:
-      enabled: true
-      fail-fast: true
-      uri: http://${CONFIG_SERVER_HOST}:${CONFIG_SERVER_PORT}
-      request-connect-timeout: ${CONFIG_SERVER_CONNECT_TIMEOUT:60000}
-      request-read-timeout: ${CONFIG_SERVER_READ_TIMEOUT:60000}
+      server:
+        git:
+          clone-on-start: true
+          timeout: 60000
+          uri: https://github.com/my-org/cloud-config-repo.git
+          username: ${SPRING_CLOUD_CONFIG_SERVER_REPO_USERNAME}
+          password: ${SPRING_CLOUD_CONFIG_SERVER_REPO_PASSWORD}
+          default-label: main
+          search-paths: config/**
+aws:
+  secret-manager:
+    secret-id: config-prod
 ```
 
-**실행 방법:**
-```bash
-# 로컬 개발 (Config Server 미사용)
-java -jar app.jar
+- `uri`: Git 저장소 주소
+- `search-paths`: 설정 파일을 검색할 경로 패턴
+- `default-label`: 기본 브랜치
 
-# 운영 환경 (Config Server 사용)
-java -jar app.jar --spring.profiles.active=cloudconfig \
-  -DCONFIG_SERVER_HOST=config-server \
-  -DCONFIG_SERVER_PORT=8888
-```
-
----
-
-### 설정 흐름 다이어그램
+## 설정 흐름 다이어그램
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -194,64 +237,119 @@ java -jar app.jar --spring.profiles.active=cloudconfig \
 └─────────────────────────────────────────────────────────────┘
 ```
 
----
+## 실제 클라이언트 적용 예시 (order-api)
 
-### @ConfigurationProperties + @RefreshScope 활용
+실제 MSA 서비스에서 Config Client를 어떻게 사용하는지 살펴본다.
 
-Config Server에서 가져온 설정을 구조화된 객체로 바인딩하고, 동적 리로드를 지원한다.
+### 클라이언트 bootstrap.yml
 
-```java
-@Component
-@ConfigurationProperties(prefix = "app")
-@RefreshScope  // Config Server 설정 변경 시 동적 리로드
-@Getter
-@Setter
-public class AppProperties {
+`order-api/src/main/resources/bootstrap.yml`:
 
-    private StorageProperties storage;
-    private Integer maxRetryCount;
-
-    @PostConstruct
-    public void postConstruct() {
-        log.info("AppProperties loaded: {}", this);
-    }
-
-    @Getter
-    @Setter
-    public static class StorageProperties {
-        private String basePath;
-        private String s3Bucket;
-        private String uploadDir;
-    }
-}
-```
-
-**Config Server의 설정 파일 (application-common.yml):**
 ```yaml
-app:
-  storage:
-    base-path: /mnt/data
-    s3-bucket: my-service-prod
-    upload-dir: ${app.storage.base-path}/uploads
-  max-retry-count: 3
-```
-
-**사용:**
-```java
-@Service
-@RequiredArgsConstructor
-public class OrderService {
-
-    private final AppProperties appProperties;
-
-    public void process() {
-        String basePath = appProperties.getStorage().getBasePath();
-        // ...
-    }
-}
-```
-
+spring:
+  application:
+    name: order-api
+  profiles:
+    include:
+    - order
+  cloud:
+    config:
+      enabled: false    # 기본값: 비활성화
 ---
+# cloudconfig 프로필 활성화 시
+spring.profiles: cloudconfig
+spring:
+  cloud:
+    config:
+      enabled: true
+      fail-fast: true
+      uri: http://${CONFIG_SERVER_HOST}:${CONFIG_SERVER_PORT}
+      request-connect-timeout: ${CONFIG_SERVER_CONNECT_TIMEOUT:60000}
+      request-read-timeout: ${CONFIG_SERVER_READ_TIMEOUT:60000}
+```
+
+- `spring.application.name: order-api`: 이 이름으로 설정 파일 검색
+- `spring.profiles.include: order`: `application-order.yml` 설정도 함께 로드
+- `cloudconfig` 프로필: 운영 환경에서만 Config Server 연결 활성화
+- 환경변수로 Config Server 주소 주입 (K8s, Docker 등)
+
+### 설정 저장소의 파일 구조
+
+`cloud-config-repo/config/order/`:
+
+```
+config/order/
+├── order-api.yml           # order-api 전용 설정
+└── application-order.yml   # order 프로필 공통 설정 (모든 order-* 서비스 공유)
+```
+
+### 설정 파일 예시
+
+`cloud-config-repo/config/order/application-order.yml`:
+
+```yaml
+spring.profiles: dev,prod
+order:
+  datasource:
+    primary:
+      driver-class-name: org.postgresql.Driver
+      jdbc-url: jdbc:postgresql://${secrets@order.datasource.primary.host}:${secrets@order.datasource.primary.port:5432}/${secrets@order.datasource.primary.database}
+      username: ${secrets@order.datasource.primary.username}
+      password: ${secrets@order.datasource.primary.password}
+    replica:
+      driver-class-name: org.postgresql.Driver
+      jdbc-url: jdbc:postgresql://${secrets@order.datasource.replica.host}:${secrets@order.datasource.replica.port:5432}/${secrets@order.datasource.replica.database}
+      username: ${secrets@order.datasource.replica.username}
+      password: ${secrets@order.datasource.replica.password}
+  storage:
+    base-path: /app/files
+    s3-bucket: my-service-dev
+---
+spring.profiles: prod
+order:
+  storage:
+    s3-bucket: my-service-prod
+```
+
+- DB 접속 정보(host, username, password)는 `${secrets@...}`로 AWS Secrets Manager에서 조회
+- 포트는 기본값 지정: `${secrets@...port:5432}`
+- 프로필별 설정 분리: `dev,prod` 공통 설정 + `prod` 전용 오버라이드
+
+### 설정 로드 순서
+
+```
+1. order-api 로컬 application.yml (포트, 로깅 등 기본값)
+     ↓
+2. Config Server 요청: GET /order-api/dev,order
+     ↓
+3. 로드되는 파일들:
+   - config/order/order-api.yml (application-name 매칭)
+   - config/order/application-order.yml (profiles.include: order 매칭)
+     ↓
+4. AWS Secrets Manager 값 치환
+     ↓
+5. 최종 설정 주입
+```
+
+### 실행 예시
+
+```bash
+# 로컬 개발 (Config Server 미사용)
+java -jar order-api.jar
+
+# 운영 환경 (Config Server 사용)
+java -jar order-api.jar \
+  --spring.profiles.active=cloudconfig,dev \
+  -DCONFIG_SERVER_HOST=config-server \
+  -DCONFIG_SERVER_PORT=8888
+```
+
+### 파일 매핑 규칙
+
+| 클라이언트 요청 | 매핑되는 파일 |
+|----------------|--------------|
+| `order-api` + `dev,order` 프로필 | `config/order/order-api.yml`, `config/order/application-order.yml` |
+| `payment-api` + `prod` | `config/payment/payment-api.yml` |
 
 ### 설정 우선순위
 
@@ -264,20 +362,218 @@ public class OrderService {
 4. bootstrap.yml (가장 낮음)
 ```
 
-**예시:**
-```yaml
-# Config Server (order-service.yml)
-server.port: 8081
+## AWS Secrets Manager 통합
 
-# 로컬 application.yml
-server.port: 8080
+### 아키텍처
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Git Repository (일반 설정)                                   │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ order:                                                  │ │
+│ │   datasource:                                           │ │
+│ │     username: ${secrets@order.datasource.username}      │ │
+│ │     password: ${secrets@order.datasource.password}      │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Config Server                                               │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ AWSSecretsManagerAdvice (ResponseBodyAdvice)            │ │
+│ │ - ${secrets@key} 패턴 탐지                               │ │
+│ │ - AWS Secrets Manager에서 값 조회                        │ │
+│ │ - 설정값 치환                                            │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ AWS Secrets Manager                                         │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ Secret ID: config-prod                                  │ │
+│ │ {                                                       │ │
+│ │   "order.datasource.username": "prod_user",             │ │
+│ │   "order.datasource.password": "super_secret"           │ │
+│ │ }                                                       │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Client Application (최종 설정)                               │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ order:                                                  │ │
+│ │   datasource:                                           │ │
+│ │     username: prod_user           ← 치환됨              │ │
+│ │     password: super_secret        ← 치환됨              │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-→ Config Server 설정이 우선 적용되어 **8081** 포트로 실행된다.
+### 패턴 문법
 
----
+| 패턴 | 설명 |
+|------|------|
+| `${secrets@key}` | AWS Secrets Manager에서 key 조회 (없으면 원본 유지) |
+| `${secrets@key:default}` | key가 없으면 default 값 사용 |
+| `${secrets@nested.key}` | 중첩 키 지원 (JSON의 nested.key) |
 
-### fail-fast와 타임아웃 설정
+### 치환 로직 (AWSSecretsManagerAdvice)
+
+`@ControllerAdvice`를 활용하여 Config Server 응답 전에 값을 치환한다.
+
+```java
+@ControllerAdvice
+@RequiredArgsConstructor
+public class AWSSecretsManagerAdvice implements ResponseBodyAdvice<Object> {
+
+    private final AWSSecretsManagerService awsSecretsManagerService;
+    private static final Pattern ENV_PATTERN = Pattern.compile("\\$\\{([^}]+)}");
+    private static final String SECRET_PREFIX = "secrets@";
+
+    @Override
+    public Object beforeBodyWrite(Object body, ...) {
+        if (!(body instanceof Environment)) {
+            return body;
+        }
+
+        JsonNode rootNode = this.awsSecretsManagerService.getSecret();
+
+        for (PropertySource propertySource : ((Environment) body).getPropertySources()) {
+            Map<String, Object> source = (Map<String, Object>) propertySource.getSource();
+            for (Map.Entry<String, Object> entry : source.entrySet()) {
+                entry.setValue(this.replaceSecret(rootNode, entry.getValue()));
+            }
+        }
+
+        return body;
+    }
+}
+```
+
+### 타입 보존
+
+치환 시 원래 타입을 유지한다.
+
+```java
+public Object getSecretValueAsType() {
+    if (this.secretNode.isBoolean()) {
+        return this.secretNode.booleanValue();
+    } else if (this.secretNode.isNumber()) {
+        if (this.secretNode.isFloat() || this.secretNode.isDouble()) {
+            return this.secretNode.doubleValue();
+        } else {
+            return this.secretNode.longValue();
+        }
+    } else {
+        return this.secretNode.textValue();
+    }
+}
+```
+
+**예시:**
+```yaml
+# Git 설정
+app:
+  enabled: ${secrets@app.enabled}        # Boolean
+  max-retry: ${secrets@app.maxRetry}     # Integer/Long
+  timeout: ${secrets@app.timeout}        # Double
+```
+
+```json
+// AWS Secrets Manager
+{
+  "app.enabled": true,
+  "app.maxRetry": 3,
+  "app.timeout": 30.5
+}
+```
+
+### 보안 장점
+
+1. **민감 정보 분리**: Git에는 플레이스홀더만 저장, 실제 값은 AWS에서 관리
+2. **접근 제어**: IAM 정책으로 Secret 접근 권한 관리
+3. **감사 로그**: AWS CloudTrail로 Secret 접근 기록 추적
+4. **자동 로테이션**: Secrets Manager의 자동 비밀번호 로테이션 기능 활용 가능
+5. **암호화**: AWS KMS로 저장 시 암호화
+
+## 실제 동작 흐름
+
+```bash
+# 1. 클라이언트(order-api)가 Config Server에 요청
+GET http://config-server:8888/order-api/dev,order
+
+# 2. Config Server가 Git에서 설정 로드
+#    search-paths: config/** 에서 order-api.yml, application-order.yml 검색
+
+# 3. AWSSecretsManagerAdvice가 응답 전 치환
+#    ${secrets@order.datasource.password} → AWS 비밀값으로 대체
+
+# 4. 최종 응답
+{
+  "name": "order-api",
+  "profiles": ["dev", "order"],
+  "propertySources": [{
+    "source": {
+      "order.datasource.jdbc-url": "jdbc:postgresql://10.0.0.1:5432/orderdb",
+      "order.datasource.username": "order_user",
+      "order.datasource.password": "실제AWS비밀값"
+    }
+  }]
+}
+```
+
+## @ConfigurationProperties + @RefreshScope 활용
+
+Config Server에서 가져온 설정을 구조화된 객체로 바인딩하고, 동적 리로드를 지원한다.
+
+```java
+@Component
+@ConfigurationProperties(prefix = "order")
+@RefreshScope  // Config Server 설정 변경 시 동적 리로드
+@Getter
+@Setter
+public class OrderProperties {
+
+    private Map<String, DataSourceProperties> datasource;
+    private StorageProperties storage;
+
+    @Getter
+    @Setter
+    public static class DataSourceProperties {
+        private String driverClassName;
+        private String jdbcUrl;
+        private String username;
+        private String password;
+    }
+
+    @Getter
+    @Setter
+    public static class StorageProperties {
+        private String basePath;
+        private String s3Bucket;
+    }
+}
+```
+
+**사용:**
+```java
+@Service
+@RequiredArgsConstructor
+public class OrderService {
+
+    private final OrderProperties orderProperties;
+
+    public void process() {
+        String s3Bucket = orderProperties.getStorage().getS3Bucket();
+        // ...
+    }
+}
+```
+
+## fail-fast와 타임아웃 설정
 
 운영 환경에서는 Config Server 연결 실패 시 애플리케이션 시작을 중단하는 것이 안전하다.
 
@@ -301,289 +597,21 @@ spring:
 implementation 'org.springframework.retry:spring-retry'
 ```
 
----
+## 기술 스택
 
-### 프로파일 포함 (include)
+| 카테고리 | 기술 | 버전 |
+|---------|------|------|
+| Language | Java | 1.8 |
+| Framework | Spring Boot | 2.3.0.RELEASE |
+| Cloud | Spring Cloud Config | Hoxton.SR4 |
+| AWS | AWS SDK (STS, Secrets Manager) | 2.29.2 |
 
-여러 프로파일을 조합해서 사용할 수 있다.
+## 정리
 
-```yaml
-# bootstrap.yml
-spring:
-  application:
-    name: order-service
-  profiles:
-    include:
-      - common   # application-common.yml 포함 (공통 설정)
-      - secret   # application-secret.yml 포함 (민감 정보)
-```
+- **Config Server**: Git 저장소에서 설정을 읽어 HTTP로 제공
+- **Config Client**: `bootstrap.yml`로 Config Server 연결, 설정 주입
+- **AWS Secrets Manager 연동**: 표준 Spring Cloud Config에 `@ControllerAdvice`로 커스텀 확장
+- **설정 분리**: 일반 설정은 Git, 민감 정보는 AWS Secrets Manager
+- **프로파일 기반 제어**: `cloudconfig` 프로파일로 환경별 Config Server 연동 제어
 
-이렇게 하면 `order-service`, `common`, `secret` 세 가지 프로파일의 설정이 모두 병합된다.
-
----
-
-## AWS Secrets Manager 통합
-
-Config Server에서 민감한 정보(DB 비밀번호, API 키 등)를 AWS Secrets Manager와 통합하여 관리할 수 있다.
-
-### 아키텍처
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Git Repository (일반 설정)                                   │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ spring:                                                  │ │
-│ │   datasource:                                            │ │
-│ │     url: jdbc:postgresql://localhost/mydb                │ │
-│ │     username: ${secrets@db.username:defaultUser}         │ │
-│ │     password: ${secrets@db.password:defaultPass}         │ │
-│ └─────────────────────────────────────────────────────────┘ │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│ Config Server                                               │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ AWSSecretsManagerAdvice (ResponseBodyAdvice)            │ │
-│ │ - ${secrets@key} 패턴 탐지                               │ │
-│ │ - AWS Secrets Manager에서 값 조회                        │ │
-│ │ - 설정값 치환                                            │ │
-│ └─────────────────────────────────────────────────────────┘ │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│ AWS Secrets Manager                                         │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ Secret ID: config-prod                                   │ │
-│ │ {                                                        │ │
-│ │   "db.username": "prod_user",                            │ │
-│ │   "db.password": "super_secret_password",                │ │
-│ │   "api.key": "sk-xxxxxxxxxxxx"                           │ │
-│ │ }                                                        │ │
-│ └─────────────────────────────────────────────────────────┘ │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│ Client Application (최종 설정)                               │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ spring:                                                  │ │
-│ │   datasource:                                            │ │
-│ │     url: jdbc:postgresql://localhost/mydb                │ │
-│ │     username: prod_user           ← 치환됨               │ │
-│ │     password: super_secret_password  ← 치환됨            │ │
-│ └─────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Config Server 설정
-
-**application.yml:**
-```yaml
-server:
-  port: 8888
-
-spring:
-  cloud:
-    config:
-      server:
-        git:
-          uri: https://github.com/my-org/config-repo.git
-          default-label: main
-
-aws:
-  secret-manager:
-    secret-id: config-prod  # AWS Secrets Manager의 Secret ID
-```
-
-**build.gradle:**
-```gradle
-dependencies {
-    implementation 'org.springframework.cloud:spring-cloud-config-server'
-
-    // AWS SDK
-    implementation 'software.amazon.awssdk:sts:2.29.2'
-    implementation 'software.amazon.awssdk:secretsmanager:2.29.2'
-}
-```
-
-### AWS Secrets Manager 설정값 치환 구현
-
-**AWSSecretsManagerAdvice.java:**
-```java
-@RestControllerAdvice
-@RequiredArgsConstructor
-public class AWSSecretsManagerAdvice implements ResponseBodyAdvice<Environment> {
-
-    private final AWSSecretsManagerService secretsManagerService;
-
-    // ${secrets@key:defaultValue} 패턴
-    private static final Pattern SECRETS_PATTERN =
-        Pattern.compile("\\$\\{secrets@([^:}]+)(?::([^}]*))?\\}");
-
-    @Override
-    public boolean supports(MethodParameter returnType,
-                           Class<? extends HttpMessageConverter<?>> converterType) {
-        return Environment.class.isAssignableFrom(returnType.getParameterType());
-    }
-
-    @Override
-    public Environment beforeBodyWrite(Environment body,
-                                       MethodParameter returnType,
-                                       MediaType selectedContentType,
-                                       Class<? extends HttpMessageConverter<?>> converterType,
-                                       ServerHttpRequest request,
-                                       ServerHttpResponse response) {
-
-        JsonNode secrets = secretsManagerService.getSecrets();
-
-        for (PropertySource propertySource : body.getPropertySources()) {
-            Map<String, Object> source = propertySource.getSource();
-
-            for (Map.Entry<String, Object> entry : source.entrySet()) {
-                Object value = entry.getValue();
-                if (value instanceof String) {
-                    String replaced = replaceSecrets((String) value, secrets);
-                    source.put(entry.getKey(), replaced);
-                }
-            }
-        }
-
-        return body;
-    }
-
-    private String replaceSecrets(String value, JsonNode secrets) {
-        Matcher matcher = SECRETS_PATTERN.matcher(value);
-        StringBuffer result = new StringBuffer();
-
-        while (matcher.find()) {
-            String key = matcher.group(1);           // secrets@key
-            String defaultValue = matcher.group(2);  // :defaultValue
-
-            JsonNode secretValue = secrets.path(key);
-            String replacement;
-
-            if (!secretValue.isMissingNode()) {
-                replacement = secretValue.asText();
-            } else if (defaultValue != null) {
-                replacement = defaultValue;
-            } else {
-                replacement = matcher.group(0);  // 원본 유지
-            }
-
-            matcher.appendReplacement(result, Matcher.quoteReplacement(replacement));
-        }
-        matcher.appendTail(result);
-
-        return result.toString();
-    }
-}
-```
-
-**AWSSecretsManagerService.java:**
-```java
-@Service
-@RequiredArgsConstructor
-public class AWSSecretsManagerServiceImpl implements AWSSecretsManagerService {
-
-    private final SecretsManagerClient secretsManagerClient;
-    private final GetSecretValueRequest getSecretValueRequest;
-    private final ObjectMapper objectMapper;
-
-    @Override
-    public JsonNode getSecrets() {
-        try {
-            GetSecretValueResponse response =
-                secretsManagerClient.getSecretValue(getSecretValueRequest);
-            return objectMapper.readTree(response.secretString());
-        } catch (Exception e) {
-            log.error("Failed to load secrets from AWS", e);
-            return objectMapper.createObjectNode();  // 빈 노드 반환
-        }
-    }
-}
-```
-
-**AWSSecretsManagerConfig.java:**
-```java
-@Configuration
-@EnableConfigurationProperties(AWSProperties.class)
-@RequiredArgsConstructor
-public class AWSSecretsManagerConfig {
-
-    private final AWSProperties awsProperties;
-
-    @Bean
-    public SecretsManagerClient secretsManagerClient() {
-        return SecretsManagerClient.builder()
-            .region(Region.AP_NORTHEAST_2)
-            .build();
-    }
-
-    @Bean
-    public GetSecretValueRequest getSecretValueRequest() {
-        return GetSecretValueRequest.builder()
-            .secretId(awsProperties.getSecretManager().getSecretId())
-            .build();
-    }
-}
-```
-
-### 설정 파일 작성 방법
-
-**Git 저장소의 설정 파일 (application-prod.yml):**
-```yaml
-spring:
-  datasource:
-    url: jdbc:postgresql://prod-db.example.com/mydb
-    username: ${secrets@db.username}              # 기본값 없음 (필수)
-    password: ${secrets@db.password}              # 기본값 없음 (필수)
-
-external:
-  api:
-    key: ${secrets@api.key:default-key}           # 기본값 있음
-
-logging:
-  level:
-    root: ${secrets@log.level:info}               # 기본값: info
-```
-
-### 패턴 문법
-
-| 패턴 | 설명 |
-|------|------|
-| `${secrets@key}` | AWS Secrets Manager에서 key 조회 (없으면 원본 유지) |
-| `${secrets@key:default}` | key가 없으면 default 값 사용 |
-| `${secrets@nested.key}` | 중첩 키 지원 (JSON의 nested.key) |
-
-### 타입 보존
-
-Secrets Manager의 값 타입을 자동으로 보존한다:
-
-```yaml
-# Git 설정
-app:
-  enabled: ${secrets@app.enabled}        # Boolean
-  max-retry: ${secrets@app.maxRetry}     # Integer/Long
-  timeout: ${secrets@app.timeout}        # Double
-  name: ${secrets@app.name}              # String
-```
-
-```json
-// AWS Secrets Manager
-{
-  "app.enabled": true,
-  "app.maxRetry": 3,
-  "app.timeout": 30.5,
-  "app.name": "my-application"
-}
-```
-
-### 보안 장점
-
-1. **민감 정보 분리**: Git에는 플레이스홀더만 저장, 실제 값은 AWS에서 관리
-2. **접근 제어**: IAM 정책으로 Secret 접근 권한 관리
-3. **감사 로그**: AWS CloudTrail로 Secret 접근 기록 추적
-4. **자동 로테이션**: Secrets Manager의 자동 비밀번호 로테이션 기능 활용 가능
-5. **암호화**: AWS KMS로 저장 시 암호화
+이 구조를 통해 설정의 중앙 집중 관리와 보안을 동시에 달성할 수 있다.
