@@ -6,6 +6,14 @@ tags: [java, spring]
 
 어노테이션은 코드에 메타데이터를 부여하는 방법이다. 그 자체로는 아무런 동작을 하지 않지만, 리플렉션이나 컴파일러를 통해 처리되어 실제 기능을 수행한다.
 
+어노테이션의 용도:
+
+- 컴파일러에 대한 정보 — 오류를 감지하거나 경고를 억제
+- 컴파일/배포 시간 처리 — 코드, XML 파일 등을 생성
+- 런타임 처리 — 리플렉션으로 검사 및 활용
+
+참고: [Oracle Java Tutorial - Annotations](https://docs.oracle.com/javase/tutorial/java/annotations/)
+
 ---
 
 ## 어노테이션의 본질
