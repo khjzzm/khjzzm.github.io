@@ -6,8 +6,8 @@ tags: [ devops, java ]
 
 > **CI/CD 학습 시리즈**
 > - **Part 1: Jenkins Pipeline + Groovy 기초** (현재 글)
-> - [Part 2: Gradle Plugin 개발](/2026-01-15-cicd-2-gradle-plugin)
-> - [Part 3: App-Builder Plugin 실전 분석](/2026-01-15-cicd-3-app-builder-plugin)
+> - [Part 2: Gradle Plugin 개발](/2026/01/cicd-2-gradle-plugin)
+> - [Part 3: App-Builder Plugin 실전 분석](/2026/01/cicd-3-app-builder-plugin)
 
 # Jenkins Pipeline 기초 학습
 

@@ -5,8 +5,8 @@ tags: [ gradle, kotlin, devops ]
 ---
 
 > **CI/CD 학습 시리즈**
-> - [Part 1: Jenkins Pipeline + Groovy 기초](/2026-01-15-cicd-1-jenkins-pipeline-groovy)
-> - [Part 2: Gradle Plugin 개발](/2026-01-15-cicd-2-gradle-plugin)
+> - [Part 1: Jenkins Pipeline + Groovy 기초](/2026/01/cicd-1-jenkins-pipeline-groovy)
+> - [Part 2: Gradle Plugin 개발](/2026/01/cicd-2-gradle-plugin)
 > - **Part 3: App-Builder Plugin 실전 분석** (현재 글)
 >
 > **사전 지식**: Part 1, 2를 먼저 학습하면 이 문서를 더 쉽게 이해할 수 있습니다.
