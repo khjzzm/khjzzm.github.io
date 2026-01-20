@@ -1,15 +1,16 @@
 ---
 layout: post
-title: "[Part 3] App-Builder Plugin 실전 분석 - CI/CD 자동화 플러그인"
+title: "[Part 4] App-Builder Plugin 실전 분석 - CI/CD 자동화 플러그인"
 tags: [ gradle, kotlin, devops ]
 ---
 
 > **CI/CD 학습 시리즈**
-> - [Part 1: Jenkins Pipeline + Groovy 기초](/2026/01/cicd-1-jenkins-pipeline-groovy)
+> - [Part 1: Kotlin 문법 기초](/2026/01/cicd-1-kotlin-basic)
 > - [Part 2: Gradle Plugin 개발](/2026/01/cicd-2-gradle-plugin)
-> - **Part 3: App-Builder Plugin 실전 분석** (현재 글)
+> - [Part 3: Jenkins Pipeline + Groovy 기초](/2026/01/cicd-3-jenkins-pipeline-groovy)
+> - **Part 4: App-Builder Plugin 실전 분석** (현재 글)
 >
-> **사전 지식**: Part 1, 2를 먼저 학습하면 이 문서를 더 쉽게 이해할 수 있습니다.
+> **사전 지식**: Part 1~3을 먼저 학습하면 이 문서를 더 쉽게 이해할 수 있습니다.
 
 이 문서는 프로젝트를 처음 접하는 개발자를 위한 학습 가이드다.
 
@@ -444,7 +445,7 @@ build(
         logLevel: 'debug',
         skipStages: '1,3',
         appBuilderConfig: [
-                workspace: '/custom/workspace'
+                workspace: '/app-builde'
         ]
 )
 ```
@@ -1521,13 +1522,70 @@ object ChangeDetectionUtils {
 }
 ```
 
+**Base Commit 결정 (GitUtils):**
+
+Jenkins Git 플러그인이 제공하는 환경변수를 활용하여 비교 기준점을 결정한다:
+
+```kotlin
+// GitUtils.kt
+/**
+ * 환경변수에서 base commit 가져오기 (Jenkins Git 플러그인)
+ *
+ * 우선순위:
+ * 1. GIT_PREVIOUS_SUCCESSFUL_COMMIT (마지막 성공 빌드 기준)
+ * 2. GIT_PREVIOUS_COMMIT (이번 push 범위)
+ */
+fun getBaseCommitFromEnv(): String? {
+    return System.getenv("GIT_PREVIOUS_SUCCESSFUL_COMMIT")?.takeIf { it.isNotBlank() }
+        ?: System.getenv("GIT_PREVIOUS_COMMIT")?.takeIf { it.isNotBlank() }
+}
+```
+
+```
+┌─ Base Commit 결정 우선순위 ──────────────────────────────────────┐
+│                                                                   │
+│  1순위: GIT_PREVIOUS_SUCCESSFUL_COMMIT                           │
+│  └─ 마지막 성공 빌드의 커밋                                        │
+│  └─ 빌드 실패 후 재시도 시 누락된 변경사항 포함                      │
+│                                                                   │
+│  2순위: GIT_PREVIOUS_COMMIT                                       │
+│  └─ 이번 push 직전 커밋                                           │
+│  └─ 단일 push에 여러 커밋 포함 시 유용                             │
+│                                                                   │
+│  3순위: Merge 커밋 감지                                           │
+│  └─ 첫 번째 부모와 비교                                           │
+│                                                                   │
+│  4순위: HEAD~1 (기본값)                                           │
+│  └─ 환경변수 없을 때 직전 커밋과 비교                              │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+**빌드 실패 재시도 시나리오:**
+
+```
+┌─ 시나리오: 빌드 실패 후 수정 ────────────────────────────────────┐
+│                                                                   │
+│  커밋 A (성공) ← GIT_PREVIOUS_SUCCESSFUL_COMMIT                  │
+│      ↓                                                            │
+│  커밋 B: api, batch 변경 → 빌드 실행 → api 빌드 실패             │
+│      ↓                                                            │
+│  커밋 C: api 수정 → 빌드 재시도                                   │
+│                                                                   │
+│  비교: 커밋 A ~ 커밋 C                                            │
+│  결과: api, batch 모두 빌드 대상 (batch는 커밋 B에서 변경됨)       │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+```
+
 **3단계 변경 파일 감지:**
 
 ```
 ┌─ 변경 파일 감지 전략 ───────────────────────────────────────────┐
 │                                                                  │
 │  1단계: 커밋 비교 (Jenkins에서 주로 사용)                         │
-│  ├─ 일반 커밋: git diff --name-only HEAD~1 HEAD                 │
+│  ├─ git diff --name-only {baseCommit} HEAD                      │
+│  ├─ baseCommit = getBaseCommit() 으로 결정                       │
 │  └─ Merge 커밋: git diff --name-only {첫번째 부모} HEAD         │
 │                                                                  │
 │         ↓ 파일 없으면                                            │
