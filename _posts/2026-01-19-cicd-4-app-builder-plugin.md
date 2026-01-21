@@ -889,6 +889,309 @@ AppBuilderPlugin
    └─ AppBuilderTask (빌드 실행)
 ```
 
+### 헷갈리기 쉬운 부분: Extension과 Task 이름
+
+> **AppBuilderExtension과 AppBuilderTask, 이름이 비슷한데 다른 건가요?**
+>
+> 네! **완전히 다른 것**입니다. 같은 이름이지만 **다른 저장소**에 등록돼요.
+
+#### 이름 생성 로직
+
+```kotlin
+// AppBuilderExtension.kt
+companion object {
+    val NAME = AppBuilderExtension::class.simpleName.toString().replace("Extension", "")
+    // "AppBuilderExtension" → "AppBuilder"
+}
+
+// AppBuilderTask.kt
+companion object {
+    val TASK_NAME = AppBuilderTask::class.simpleName.toString().replace("Task", "")
+    // "AppBuilderTask" → "AppBuilder"
+}
+```
+
+#### 둘 다 "AppBuilder"지만 다른 곳에 등록됨
+
+```kotlin
+// Plugin에서 등록할 때
+project.extensions.create("AppBuilder", AppBuilderExtension::class.java)  // Extension 저장소
+project.tasks.register("AppBuilder", AppBuilderTask::class.java)          // Task 저장소
+```
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  같은 이름, 다른 저장소!                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  project.extensions (Extension 저장소)                      │
+│  └── "AppBuilder" → AppBuilderExtension                     │
+│                      ↓                                       │
+│                      appBuilder { ... }  (build.gradle)     │
+│                                                              │
+│  project.tasks (Task 저장소)                                │
+│  └── "AppBuilder" → AppBuilderTask                          │
+│                      ↓                                       │
+│                      $ gradle AppBuilder  (명령어)          │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 사용할 때
+
+```groovy
+// build.gradle - Extension 사용 (소문자로 시작하는 DSL)
+appBuilder {
+    ecrRegistry = 'xxx.dkr.ecr.ap-northeast-2.amazonaws.com'
+}
+```
+
+```bash
+# 명령어 - Task 실행 (대문자로 시작)
+$ gradle AppBuilder -PtargetModule=my-module
+```
+
+> **정리**
+> - **Extension "AppBuilder"** → `project.extensions`에 저장 → `appBuilder { }` DSL로 설정
+> - **Task "AppBuilder"** → `project.tasks`에 저장 → `gradle AppBuilder` 명령어로 실행
+>
+> Gradle은 Extension과 Task를 **다른 저장소**에 관리하기 때문에 같은 이름이어도 **충돌하지 않음**!
+
+### 두 종류의 Extension: 전역 설정 vs Task 파라미터
+
+> **AppBuilderExtension과 GetTargetsTaskExtension은 값 넣는 방식이 완전히 달라요!**
+
+#### 1. AppBuilderExtension - build.gradle에서 DSL로 설정
+
+```groovy
+// build.gradle.kts (또는 build.gradle)
+plugins {
+    id("com.knet.plugins.app-builder-gradle-plugin") version "1.0.0"
+}
+
+// DSL 블록으로 값 설정
+appBuilder {
+    ecrRegistry.set("123456789.dkr.ecr.ap-northeast-2.amazonaws.com")
+    helmValuesRepo.set("https://github.com/company/helm-values.git")
+    workspace.set(file("/path/to/workspace"))
+
+    // 중첩 Extension
+    nexus {
+        url.set("https://nexus.company.com")
+        username.set("admin")
+        password.set("secret")
+    }
+
+    github {
+        username.set("github-user")
+        password.set("github-token")
+    }
+
+    git {
+        email.set("ci@company.com")
+        name.set("CI Bot")
+    }
+}
+```
+
+#### 2. GetTargetsTaskExtension - 명령어 `-P` 파라미터로 설정
+
+```bash
+# 명령어로 값 전달
+$ gradle GetTargets \
+    -PtargetModule=order-api \
+    -PexcludeDirectoryPatterns=".git,node_modules,build"
+```
+
+```kotlin
+// GetTargetsTaskExtension.kt 내부 동작
+abstract class GetTargetsTaskExtension @Inject constructor(properties: Map<String, Object>) {
+    // -PtargetModule=order-api → properties["targetModule"] = "order-api"
+    var targetModule: String = properties["targetModule"]?.toString() ?: ""
+
+    // -PexcludeDirectoryPatterns=... → properties["excludeDirectoryPatterns"]
+    var excludeDirectoryPatterns: List<String> = ...
+}
+```
+
+#### 비교 요약
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│               두 가지 Extension의 값 설정 방식                │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  AppBuilderExtension (전역 설정)                            │
+│  ─────────────────────────────                              │
+│  설정 위치: build.gradle                                    │
+│  설정 방식: DSL 블록                                        │
+│  설정 시점: 빌드 구성 단계 (Configuration Phase)             │
+│                                                              │
+│  appBuilder {                                               │
+│      ecrRegistry.set("...")                                 │
+│      nexus {                                                │
+│          url.set("...")                                     │
+│      }                                                      │
+│  }                                                          │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  GetTargetsTaskExtension (Task 파라미터)                    │
+│  ───────────────────────────────────────                    │
+│  설정 위치: 명령어                                          │
+│  설정 방식: -P 옵션                                         │
+│  설정 시점: 실행 시점 (Execution Phase)                      │
+│                                                              │
+│  $ gradle GetTargets -PtargetModule=order-api               │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| 구분        | AppBuilderExtension             | GetTargetsTaskExtension |
+|-----------|---------------------------------|-------------------------|
+| **용도**    | 프로젝트 전역 설정                      | Task 실행 파라미터            |
+| **설정 위치** | `build.gradle`                  | 명령어 `-P` 옵션             |
+| **설정 방식** | DSL 블록 `appBuilder { }`         | `-PtargetModule=...`    |
+| **값 타입**  | `Property<String>` (Gradle API) | 일반 `String`             |
+| **설정 시점** | 빌드 구성 시                         | Task 실행 시               |
+| **변경 빈도** | 프로젝트당 1번 설정                     | 매 실행마다 다를 수 있음          |
+
+> **요약**
+> - **AppBuilderExtension**: "이 프로젝트의 ECR은 뭐야? Nexus는 어디야?" → **고정 설정**
+> - **GetTargetsTaskExtension**: "이번에 어떤 모듈 빌드해?" → **실행 시 파라미터**
+
+### build() 빈 값으로도 동작하는 이유
+
+> **의문**: `@Library('app-builder-gradle-plugin') _ build()` 호출 시 아무 값도 안 넣는데 어떻게 동작하지?
+
+실제로 빌드 대상 프로젝트(예: `com.knet.msa/fax`)의 `build.gradle`을 보면:
+
+```groovy
+// fax/build.gradle - appBuilder 설정이 없다!
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.0.0'
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+}
+// appBuilder { } 블록 없음!
+```
+
+```groovy
+// fax/Jenkinsfile
+@Library('app-builder-gradle-plugin') _
+build()  // 빈 값!
+```
+
+그런데도 `build()`가 정상 동작하는 이유는 **4가지 폴백 메커니즘** 때문입니다.
+
+#### 1. Task 기본값 폴백 (try-catch 패턴)
+
+```kotlin
+// Task 내부 코드
+val workspace: File = try {
+    extension.workspace.get()  // Extension에서 가져오기 시도
+} catch (e: Exception) {
+    project.rootDir  // 실패하면 프로젝트 루트 사용
+}
+```
+
+- `appBuilder.workspace`가 설정되지 않으면 → `project.rootDir` 사용
+- 대부분의 설정이 이런 **안전한 기본값**을 가짐
+
+#### 2. Jenkins 환경변수 자동 제공
+
+Jenkins가 빌드 실행 시 자동으로 주입하는 환경변수:
+
+```groovy
+// build.groovy에서 환경변수 변환
+appBuilderConfig.forEach { key, value ->
+    env[camelToSnake(key)] = value  // camelCase → SNAKE_CASE
+}
+```
+
+| Jenkins 환경변수          | 용도              | 자동 제공        |
+|-----------------------|-----------------|--------------|
+| `BRANCH_NAME`         | 현재 브랜치          | ✅ Jenkins 자동 |
+| `GIT_PREVIOUS_COMMIT` | 이전 커밋 해시        | ✅ Jenkins 자동 |
+| `GIT_COMMIT`          | 현재 커밋 해시        | ✅ Jenkins 자동 |
+| `WORKSPACE`           | Jenkins 작업 디렉토리 | ✅ Jenkins 자동 |
+| `BUILD_NUMBER`        | 빌드 번호           | ✅ Jenkins 자동 |
+
+#### 3. Jenkins Credentials
+
+`build.groovy`에서 `withCredentials`로 인증 정보 주입:
+
+```groovy
+// vars/build.groovy
+withCredentials([
+        usernamePassword(credentialsId: 'nexus',
+                usernameVariable: 'NEXUS_USERNAME',
+                passwordVariable: 'NEXUS_PASSWORD'),
+        usernamePassword(credentialsId: 'github',
+                usernameVariable: 'GITHUB_USERNAME',
+                passwordVariable: 'GITHUB_PASSWORD')
+]) {
+    // 여기서 gradle 실행 - 환경변수로 인증 정보 전달됨
+}
+```
+
+- `NEXUS_USERNAME`, `NEXUS_PASSWORD` → Nexus 저장소 인증
+- `GITHUB_USERNAME`, `GITHUB_PASSWORD` → GitHub 인증
+
+#### 4. 프로젝트 구조 자동 감지
+
+Task가 프로젝트 구조를 분석해서 자동 설정:
+
+```kotlin
+// 모듈 언어 자동 감지
+val language = when {
+    file("$modulePath/pom.xml").exists() -> "java"
+    file("$modulePath/build.gradle").exists() -> "java"
+    file("$modulePath/package.json").exists() -> "node"
+    file("$modulePath/go.mod").exists() -> "go"
+    else -> "unknown"
+}
+
+// 빌드 타입 자동 감지
+val type = when {
+    file("$modulePath/Dockerfile.app.java").exists() -> "app"
+    file("$modulePath/Dockerfile.lib.java").exists() -> "lib"
+    else -> "unknown"
+}
+```
+
+#### 동작 흐름 요약
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    build() 호출 시 값 주입 순서              │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1️⃣ build.gradle의 appBuilder { } 값                        │
+│     └→ 없으면 ↓                                              │
+│                                                              │
+│  2️⃣ Jenkins Credentials (nexus, github)                     │
+│     └→ 환경변수로 NEXUS_*, GITHUB_* 주입                     │
+│                                                              │
+│  3️⃣ Jenkins 자동 환경변수                                    │
+│     └→ BRANCH_NAME, GIT_COMMIT, WORKSPACE 등                 │
+│                                                              │
+│  4️⃣ Task 기본값 폴백                                         │
+│     └→ project.rootDir, 자동 감지 로직                       │
+│                                                              │
+│  ✅ 결과: 아무 설정 없어도 빌드 가능!                         │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+> **결론**
+> - `appBuilder { }` 설정은 **선택사항** (Optional)
+> - Jenkins 환경 + 기본값 폴백으로 **대부분 자동 처리**
+> - 커스텀이 필요할 때만 `appBuilder { }`나 `build(appBuilderConfig: [...])` 사용
+
 ### 4.2 전역 설정 - AppBuilderExtension
 
 **파일**: `extension/AppBuilderExtension.kt`
