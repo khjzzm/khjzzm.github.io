@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Spring Boot 4 + Java 21 마이그레이션 가이드
+title: Spring Boot 4 + Java 21 + Kotlin 2 마이그레이션 및 도입 가이드
 tags: [ spring, java, gradle, kotlin, jackson ]
 ---
 
@@ -8,14 +8,13 @@ Spring Boot 2.x에서 4.x로, Java 8에서 21로 업그레이드하면서 겪은
 
 ## 개요
 
-| 항목               | 변경 전          | 변경 후     |
-|------------------|---------------|----------|
-| **Java**         | 8             | 21       |
-| **Spring Boot**  | 2.3.0.RELEASE | 4.0.1    |
-| **Spring Cloud** | Hoxton.SR4    | 2025.0.0 |
-| **Gradle**       | 6.9.4         | 9.1.0    |
-| **Kotlin**       | 미사용           | 2.2.0    |
-| **Jackson**      | 2.x           | 3.0.0    |
+| 항목              | 변경 전          | 변경 후  |
+|-----------------|---------------|-------|
+| **Java**        | 8             | 21    |
+| **Spring Boot** | 2.3.0.RELEASE | 4.0.1 |
+| **Gradle**      | 6.9.4         | 9.1.0 |
+| **Kotlin**      | 미사용           | 2.2.0 |
+| **Jackson**     | 2.x           | 3.0.0 |
 
 ---
 
@@ -146,14 +145,6 @@ plugins {
     id 'org.springframework.boot' version '4.0.1'
     id 'io.spring.dependency-management' version '1.1.7'
 }
-
-ext {
-    // 변경 전
-    set('springCloudVersion', "Hoxton.SR4")
-
-    // 변경 후
-    set('springCloudVersion', "2025.0.0")
-}
 ```
 
 ### javax → jakarta 마이그레이션
@@ -210,19 +201,6 @@ implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:2.2.0'
 
 // 변경 후
 implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.1'
-```
-
-### OAuth2 마이그레이션
-
-Spring Cloud OAuth2는 deprecated되어 Spring Security OAuth2로 대체되었다.
-
-```groovy
-// 변경 전
-implementation 'org.springframework.cloud:spring-cloud-starter-oauth2'
-
-// 변경 후
-implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
-implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 ```
 
 ### HTTP Message Converter
