@@ -1318,16 +1318,86 @@ fun test() {
 }
 ```
 
-왜냐하면 non-inline 람다는 별도의 객체로 저장되어 나중에 실행될 수 있기 때문에, 바깥 함수가 이미 종료된 후일 수 있다.
+이 코드를 컴파일하면 다음과 같은 에러가 발생한다:
+
+```
+'return' is not allowed here
+```
+
+**왜 inline에서만 가능한가?**
+
+inline 함수는 컴파일 시 호출 지점에 코드가 **복사**된다:
+
+```kotlin
+// inline 함수
+inline fun inlineForEach(list: List<Int>, action: (Int) -> Unit) {
+    for (item in list) action(item)
+}
+
+fun test() {
+    inlineForEach(listOf(1, 2, 3)) {
+        if (it == 2) return  // ✅ OK
+    }
+}
+
+// ↓ 컴파일 후 (개념적)
+fun test() {
+    for (item in listOf(1, 2, 3)) {
+        if (item == 2) return  // test()에서 return하는 것과 동일!
+    }
+}
+```
+
+반면 non-inline 람다는 **별도의 객체**로 생성되어 나중에 실행될 수 있다:
+
+```kotlin
+// non-inline 함수
+fun myForEach(list: List<Int>, action: (Int) -> Unit) {
+    for (item in list) action(item)
+}
+
+fun test() {
+    myForEach(listOf(1, 2, 3)) {
+        // 이 람다는 객체로 저장됨
+        // test()가 이미 종료된 후에 실행될 수도 있음
+        // 그러면 return으로 어떤 함수를 종료해야 할지 알 수 없음!
+        if (it == 2) return  // ❌ 불가능
+    }
+}
+```
+
+람다가 객체로 저장되면 바깥 함수(`test`)가 이미 종료된 후에 실행될 수 있기 때문에, non-local return이 불가능하다.
+
+**해결책: return@label 사용**
+
+non-inline 함수에서도 레이블을 사용하면 람다만 종료할 수 있다:
+
+```kotlin
+fun test() {
+    myForEach(listOf(1, 2, 3)) {
+        if (it == 2) return@myForEach  // ✅ 람다만 종료
+        println(it)
+    }
+    println("완료")
+}
+// 출력: 1, 3, 완료
+```
 
 #### 정리
 
-| 상황                | return 동작            | 예시                           |
-|-------------------|----------------------|------------------------------|
-| inline 함수의 람다     | 바깥 함수 종료 (non-local) | `forEach { return }`         |
-| 레이블 return        | 람다만 종료 (local)       | `forEach { return@forEach }` |
-| 익명 함수             | 익명 함수만 종료            | `forEach(fun(x) { return })` |
-| non-inline 함수의 람다 | return 사용 불가         | 컴파일 에러                       |
+| 상황                | return 동작            | 예시                                |
+|-------------------|----------------------|-----------------------------------|
+| inline 함수의 람다     | 바깥 함수 종료 (non-local) | `forEach { return }`              |
+| 레이블 return        | 람다만 종료 (local)       | `forEach { return@forEach }`      |
+| 익명 함수             | 익명 함수만 종료            | `forEach(fun(x) { return })`      |
+| non-inline 함수의 람다 | return 사용 불가 ❌       | `'return' is not allowed here` 에러 |
+
+**핵심 포인트:**
+
+- `return`은 가장 가까운 `fun` 키워드가 있는 함수에서 반환한다
+- 람다는 `fun`이 아니므로, `return`은 람다를 감싸는 바깥 함수에서 반환한다
+- 단, inline 함수의 람다에서만 non-local return이 가능하다 (코드가 복사되므로)
+- non-inline 함수의 람다에서는 `return@label`만 사용 가능하다
 
 ### 클로저 (Closure)
 
