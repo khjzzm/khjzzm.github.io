@@ -422,16 +422,16 @@ Flux.fromIterable(faxList)
 
 filter(fax ->fax.
 
-getStatus() ==SENT)       // 조건에 맞는 것만
+getStatus() ==SENT)    // 조건에 맞는 것만
 	.
 
-distinct()                                     // 중복 제거
+distinct()                                // 중복 제거
     .
 
-take(10)                                       // 처음 10개만
+take(10)                                  // 처음 10개만
     .
 
-skip(5)                                        // 처음 5개 건너뛰기
+skip(5)                                   // 처음 5개 건너뛰기
 ```
 
 #### 조합 (Combining)
@@ -475,7 +475,6 @@ faxRepository.findById(seq)
     .
 
 onErrorReturn(Fax.empty())
-
 	// 에러 시 다른 Mono로 전환
 	.
 
@@ -487,14 +486,12 @@ warn("조회 실패: {}",e.getMessage());
 
 empty();
     })
-
 		// 에러 변환 (래핑)
 		.
 
 onErrorMap(e ->new
 
 FaxServiceException("팩스 조회 실패",e))
-
 	// 에러 로깅 (스트림은 계속)
 	.
 
@@ -514,10 +511,10 @@ Flux.range(1,100)
 
 map(i ->
 
-blockingOperation(i))  // 이 작업을 어디서 실행할 것인가?
+blockingOperation(i))              // 이 작업을 어디서 실행할 것인가?
 	.
 
-subscribeOn(Schedulers.boundedElastic())  // 구독 시점부터 별도 스레드
+subscribeOn(Schedulers.boundedElastic())     // 구독 시점부터 별도 스레드
 	.
 
 subscribe();
@@ -527,7 +524,7 @@ Flux.
 range(1,100)
     .
 
-publishOn(Schedulers.parallel())  // 이 지점부터 다운스트림을 병렬 스레드로
+publishOn(Schedulers.parallel())            // 이 지점부터 다운스트림을 병렬 스레드로
 	.
 
 map(i ->
@@ -773,7 +770,7 @@ Spring MVC                              Spring WebFlux
 Tomcat (Servlet Container)              Netty (Event Loop)
   │                                       │
   ├── Thread Pool (200개)                 ├── Boss Group (1개 스레드, 접속 수락)
-  │     └── 요청 하나당 스레드 하나        ├── Worker Group (코어 수만큼, I/O 처리)
+  │     └── 요청 하나당 스레드 하나          ├── Worker Group (코어 수만큼, I/O 처리)
   │                                       │     └── 모든 요청을 소수 스레드로 처리
   ▼                                       ▼
 Servlet API                             Reactive Streams
@@ -1038,7 +1035,8 @@ fun sendFax(dto:FaxSendDto):Mono
 			.thenReturn(FaxSeqVo(seq))
 	}
         .onErrorMap {
-		e -> FaxSendException("팩스 전송 실패", e)
+		e ->
+			FaxSendException("팩스 전송 실패", e)
 	}
 }
 
