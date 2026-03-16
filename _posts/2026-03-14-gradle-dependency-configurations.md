@@ -150,13 +150,106 @@ commons-web-server는 Servlet(WebMVC)과 Reactive(WebFlux) 둘 다 지원하는 
 
 jOOQ와 MyBatis도 마찬가지다. commons-web-server에 JooqQueryBuilder와 MybatisSqlProvider가 둘 다 있지만, 사용처가 어떤 DB 접근 기술을 쓰느냐에 따라 필요한 것만 가져간다.
 
+## runtimeOnly
+
+```kotlin
+dependencies {
+    runtimeOnly("org.postgresql:postgresql")
+}
+```
+
+`compileOnly`의 정반대다. **컴파일 시에는 classpath에 없고, 런타임에만 포함**된다.
+
+```
+컴파일 시: A 모듈 → B 라이브러리 (없음!)
+런타임 시: A 모듈 → B 라이브러리 (있음)
+```
+
+**언제 쓰는가:** 코드에서 직접 import하지 않지만 실행할 때 필요한 것들.
+
+대표적인 예시:
+- **JDBC 드라이버** - 코드에서는 `DataSource` 인터페이스만 쓰고, 실제 구현체(`PostgreSQL`, `MySQL`)는 런타임에 로드
+- **로깅 구현체** - 코드에서는 `SLF4J` 인터페이스만 쓰고, 실제 구현(`Logback`)은 런타임에 바인딩
+- **Spring DevTools** - 개발 시 자동 재시작 등의 기능을 제공하지만 코드에서 직접 참조하지 않음
+
+```kotlin
+// bank-scheduler/build.gradle
+dependencies {
+    runtimeOnly 'org.springframework.boot:spring-boot-devtools'
+}
+```
+
+컴파일 시 classpath에 없으므로, 실수로 DevTools 클래스를 직접 import하는 것을 방지할 수 있다.
+
+## testImplementation
+
+```kotlin
+dependencies {
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.mockito.kotlin:mockito-kotlin")
+}
+```
+
+**테스트 코드(`src/test`)에서만 사용**되는 의존성. 메인 코드(`src/main`)에서는 사용 불가하고, 빌드된 jar에도 포함되지 않는다.
+
+**언제 쓰는가:** 테스트 프레임워크, 목(mock) 라이브러리, 테스트 유틸리티 등.
+
+```kotlin
+// commons-web-server/build.gradle.kts
+dependencies {
+    // 메인 코드에서는 compileOnly (사용처가 선택)
+    compileOnly(libs.spring.boot.starter.webflux)
+    compileOnly(libs.jooq)
+
+    // 테스트에서는 testImplementation (테스트 실행에 필요하므로)
+    testImplementation(libs.spring.boot.starter.webflux)
+    testImplementation(libs.jooq)
+}
+```
+
+commons-web-server에서 주목할 패턴이 있다. WebFlux와 jOOQ를 메인에서는 `compileOnly`로, 테스트에서는 `testImplementation`으로 선언했다.
+메인 코드는 "사용처가 알아서 가져와라"지만, 테스트는 직접 실행해야 하므로 런타임에 있어야 한다.
+
+`test` 접두어가 붙은 변형은 다른 설정에도 있다:
+- `testImplementation` - 테스트 컴파일 + 런타임
+- `testCompileOnly` - 테스트 컴파일만
+- `testRuntimeOnly` - 테스트 런타임만
+
+## annotationProcessor
+
+```kotlin
+dependencies {
+    compileOnly("org.projectlombok:lombok")
+    annotationProcessor("org.projectlombok:lombok")
+}
+```
+
+**Java 어노테이션 프로세서**를 위한 설정이다. 컴파일 시 어노테이션을 읽어서 코드를 자동 생성한다.
+
+Lombok이 대표적인 예시로, `@Getter`, `@Builder` 등의 어노테이션을 처리해서 getter/builder 코드를 컴파일 타임에 생성한다. 런타임에는 필요 없으므로 `compileOnly`와 함께 사용한다.
+
+```kotlin
+// bank-scheduler/build.gradle (Java 프로젝트)
+dependencies {
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+}
+```
+
+Kotlin 프로젝트에서는 `kapt` 또는 `ksp`를 대신 사용한다. Kotlin은 자체적으로 data class, default parameter 등을 지원하므로 Lombok이 필요 없다.
+
 ## 비교 요약
 
 ```
-                    컴파일 시    런타임 시    사용처에 전이
-api                 O           O           O
-implementation      O           O           X
-compileOnly         O           X           X
+                      컴파일 시    런타임 시    사용처에 전이
+api                   O           O           O
+implementation        O           O           X
+compileOnly           O           X           X
+runtimeOnly           X           O           X
+testImplementation    O (test)    O (test)    X
+annotationProcessor   O (APT)    X           X
 ```
 
 ## 판단 기준
