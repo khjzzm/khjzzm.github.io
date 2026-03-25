@@ -610,9 +610,22 @@ nxBuild()
 
 ## 핵심 요약
 
+| 역할 | 도구 |
+|------|------|
+| 소스 빌드 | Gradle |
+| 컨테이너 이미지 빌드 | BuildKit (buildctl) |
+| 빌드 오케스트레이션 / 변경 감지 | Nx (affected) |
+| 버전 관리 | Nx Release + Conventional Commits |
+| 라이브러리 저장소 | Nexus (jar publish) |
+| 이미지 저장소 | AWS ECR |
+| 배포 | ArgoCD (helm-values GitOps) |
+| CI 파이프라인 | Jenkins Shared Library |
+
 - **변경 감지**: `nx affected`가 변경된 모듈만 골라내고, 의존관계로 연결된 모듈도 함께 포함
 - **버전 결정**: Conventional Commits(`fix:`, `feat:`, `feat!:`)로 자동 결정. `chore:` 등은 빌드/배포 안 함
 - **sharedGlobals**: 루트 빌드 파일 변경 시 전체 모듈 강제 빌드/배포
 - **배포 대상**: `type:deployable` 태그로 판별. 라이브러리는 Nexus, 앱은 ECR+ArgoCD
 - **브랜치 전략**: main → 정식 버전 + prod 배포, 그 외 → beta 프리릴리즈 + dev 배포
 - **빌드 순서**: 위상 정렬로 의존성 순서 보장
+
+Nx는 "JavaScript 전용 도구"가 아니다. `nx:run-commands` executor를 통해 어떤 언어, 어떤 빌드 시스템이든 모노레포의 오케스트레이션 레이어로 활용할 수 있다. Gradle 모노레포에서 affected 빌드, 독립 버전 관리, 자동 CHANGELOG가 필요하다면 충분히 고려할 만한 선택이다.
