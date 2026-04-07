@@ -1,0 +1,1990 @@
+---
+layout: post
+title: Commons 라이브러리 코드 리뷰 가이드
+tags: [ kotlin, spring-boot, review ]
+---
+
+
+> 마이크로서비스 공통 라이브러리 전체 분석 문서 (팀 공유용)
+>
+> **구 버전**: `commons-util` (Java, Spring Boot 2.3, WebClient 기반)
+> **신 버전**: `commons` (Kotlin, Spring Boot 3.x + Java 25, RestClient/WebFlux 이중 지원)
+
+---
+
+## 1. 프로젝트 개요
+
+### 1.1 목적
+- 마이크로서비스 간 **공통으로 사용하는 코드**를 라이브러리로 분리
+- 세션 관리, API 호출, 에러 처리, 쿼리 빌딩 등을 표준화
+- Nexus에 배포하여 각 서비스에서 의존성으로 사용
+
+### 1.2 기술 스택
+| 항목 | 기술 |
+|------|------|
+| 언어 | Kotlin |
+| JDK | Java 25 |
+| 프레임워크 | Spring Boot (Servlet + WebFlux 이중 지원) |
+| 빌드 | Gradle (Kotlin DSL), Nx (모노레포 관리) |
+| 보안 | Spring Security OAuth2 Resource Server (JWT) |
+| DB 프레임워크 | MyBatis, jOOQ (선택적) |
+| CI/CD | Jenkins, Nexus (Maven 저장소) |
+| 직렬화 | Jackson (tools.jackson.databind) |
+
+### 1.3 모듈 구조
+
+```
+commons/
+├── kotlin/commons/                  # 핵심 모듈 (의존성 없음)
+├── kotlin/commons-web-server/       # 서버 웹 모듈 (Spring MVC + WebFlux)
+└── kotlin/commons-web-client/       # API 클라이언트 모듈
+```
+
+**의존 관계:**
+```
+commons-web-server  ──▶  commons
+commons-web-client  ──▶  commons
+```
+
+### 1.4 빌드 설정 핵심 포인트
+
+- **Java 25 Toolchain**: `JavaLanguageVersion.of(25)` — 시스템에 Java 25 필수
+- **버전 관리**: 각 모듈의 `package.json`에서 version 읽음 (Nx 기반 릴리즈)
+- **Nexus 배포**: `maven-publish` 플러그인으로 `nexus-hosted` 저장소에 발행
+- **Branch 전략**: `main` → `latest.release`, 그 외 → `latest.integration`
+- **Kotlin 컴파일러 옵션**: `-Xjsr305=strict` (null 안전성 강화), `-Xannotation-default-target=param-property`
+
+---
+
+## 2. commons 모듈 (핵심)
+
+> 패키지: `com.knet.commons`
+>
+> 외부 의존성이 거의 없는 순수한 공통 코드
+
+### 2.1 예외 처리 체계
+
+#### ErrorCode 인터페이스
+```kotlin
+// 위치: exception/ErrorCode.kt
+interface ErrorCode {
+    val status: Int    // HTTP 상태 코드 (400, 404, 500 등)
+    val code: String   // 에러 코드 문자열 ("NOT_FOUND" 등)
+    val text: String   // 사용자 표시용 메시지
+}
+```
+
+**설계 의도:** 각 도메인 서비스에서 자체 ErrorCode enum을 만들 수 있도록 인터페이스로 제공.
+
+#### BusinessException
+```kotlin
+// 위치: exception/BusinessException.kt
+class BusinessException(
+    val errorCode: ErrorCode,
+    val errorDetail: String? = null,  // 추가 상세 정보
+    cause: Throwable? = null
+) : RuntimeException(...)
+```
+
+**핵심 동작:**
+- `buildMessage()`로 `"CODE: 메시지 (상세)"` 형태 메시지 자동 생성
+- 모든 비즈니스 로직 예외는 이 클래스를 통해 발생
+- 예외 발생 시 `errorCode.status`가 HTTP 응답 코드로 매핑됨
+
+#### ErrorResponse DTO
+```kotlin
+// 위치: response/ErrorResponse.kt
+data class ErrorResponse(
+    val code: String,      // 에러 코드
+    val message: String,   // 에러 메시지
+    val detail: String?,   // 상세 정보 (선택)
+    val trace: String?,    // 스택 트레이스 (설정에 따라)
+    val status: Int        // HTTP 상태 코드
+)
+```
+
+**팩토리 메서드:**
+- `ErrorResponse.of(errorCode, detail, trace)` — ErrorCode로부터 생성
+- `ErrorResponse.of(exception, trace)` — BusinessException으로부터 생성
+
+**흐름 정리:**
+```
+비즈니스 로직에서 예외 발생
+  → throw BusinessException(MyErrorCode.NOT_FOUND)
+  → GlobalExceptionHandler가 catch
+  → ErrorResponse.of(exception) 생성
+  → HTTP 응답으로 반환 (status, code, message, detail)
+```
+
+---
+
+### 2.2 세션 모델
+
+#### Session 데이터 클래스
+```kotlin
+// 위치: session/Session.kt
+data class Session(
+    var brand: Brand?,           // 서비스 브랜드 (바로빌, 비즈포인 등)
+    var product: String?,        // 제품명
+    var partnerSeq: Int?,        // 파트너 번호
+    var memberSeq: Int?,         // 회원 번호
+    var userSeq: Int?,           // 사용자 번호
+    var doSessionType: SessionType?,  // 세션 타입 (SYSTEM, MANAGER 등)
+    var doSessionSeq: Int?,      // 세션 주체 번호
+    var doDt: LocalDateTime?,    // 요청 일시
+    var doIp: String?            // 요청 IP
+)
+```
+
+**`columns()` 메서드의 활용:**
+```kotlin
+Session.columns()           // ["brand", "product", "partnerSeq", ...]
+Session.columns("delete")  // ["deleteBrand", "deleteProduct", "deletePartnerSeq", ...]
+```
+- DB 테이블에 `do_brand`, `do_product` 같은 감사(audit) 컬럼이 있을 때
+- prefix를 붙여 insert/delete 시 세션 정보 컬럼을 자동 매핑하는 데 사용
+
+#### Brand enum
+```kotlin
+enum class Brand(val text: String) {
+    BAROBILL("바로빌"),
+    BAROBILL_TESTBED("바로빌 테스트베드"),
+    BAROBILL_DEVELOPERS("바로빌 개발자센터"),
+    CERT_CENTER("공인인증센터"),
+    BIZ4IN("비즈포인"),
+    AD_CENTER("광고센터")
+}
+```
+
+#### SessionType enum
+```kotlin
+enum class SessionType(val text: String) {
+    SYSTEM("시스템"),
+    MANAGER("관리자"),
+    PARTNER("파트너"),
+    USER("사용자"),
+    GUEST("비회원")
+}
+```
+
+---
+
+### 2.3 유틸리티
+
+#### Encryptor (AES 암호화)
+```kotlin
+// 위치: util/Encryptor.kt
+object Encryptor {
+    fun encryptAES(value: String): String   // AES/CBC/PKCS5Padding 암호화 → Base64
+    fun decryptAES(value: String): String   // Base64 → AES 복호화
+}
+```
+
+**사용처:**
+- 마이크로서비스 간 세션 전달 시 **KSESSIONID** 쿠키/헤더에 암호화된 Session JSON 저장
+- `SessionLoadFilter`/`SessionLoadInterceptor`에서 복호화하여 Session 객체로 복원
+
+**암호화 방식:**
+1. 키/IV를 MD5 해시하여 128비트 AES 키 생성
+2. AES/CBC/PKCS5Padding 알고리즘으로 암호화
+3. Base64 인코딩
+
+#### String 확장 함수
+```kotlin
+// 위치: util/StringExtensions.kt
+fun String.toSnakeCase(): String  // "partnerSeq" → "partner_seq"
+fun String.toCamelCase(): String  // "partner_seq" → "partnerSeq"
+```
+
+**사용처:** 쿼리 빌더에서 Kotlin 프로퍼티명(camelCase)을 DB 컬럼명(snake_case)으로 변환할 때
+
+---
+
+### 2.4 MyBatis 타입 핸들러
+
+#### StringListArrayTypeHandler
+```kotlin
+// 위치: mybatis/typehandler/StringListArrayTypeHandler.kt
+// List<String> ↔ PostgreSQL text[] 배열 컬럼 매핑
+```
+
+#### UuidTypeHandler
+```kotlin
+// 위치: mybatis/typehandler/UuidTypeHandler.kt
+// java.util.UUID ↔ PostgreSQL UUID 컬럼 매핑
+```
+
+#### NoArg 어노테이션
+```kotlin
+// 위치: kotlin/NoArg.kt
+@Target(AnnotationTarget.CLASS)
+annotation class NoArg
+```
+- `kotlin-noarg` 컴파일러 플러그인과 함께 사용
+- 이 어노테이션이 붙은 data class에 기본 생성자를 자동 생성 (MyBatis 매핑 필요)
+
+---
+
+## 3. commons-web-server 모듈
+
+> 패키지: `com.knet.commons.web.server`
+>
+> Spring MVC(Servlet)와 Spring WebFlux(Reactive) **이중 지원**
+
+### 3.1 아키텍처 개요
+
+이 모듈은 **동일한 기능**을 Servlet과 Reactive 두 가지 스택으로 제공합니다:
+
+| 기능 | Servlet (MVC) | Reactive (WebFlux) |
+|------|-------------|-------------------|
+| 세션 로드 | `SessionLoadInterceptor` | `SessionLoadFilter` |
+| 세션 검증 | `RequireSessionInterceptor` | `RequireSessionFilter` |
+| 응답 시간 측정 | `RequestTimingInterceptor` | `RequestTimingFilter` |
+| 세션 주입 | `SessionArgumentResolver` | `SessionArgumentResolver` |
+| 쿼리 파라미터 주입 | `StrapiQueryArgumentResolver` | `StrapiQueryArgumentResolver` |
+| 보안 설정 | `CommonsSecurityAutoConfiguration` | `CommonsReactiveSecurityAutoConfiguration` |
+| 웹 설정 | `CommonsWebAutoConfiguration` | `CommonsReactiveWebAutoConfiguration` |
+| 에러 유틸 | `ErrorResponses` | `ErrorResponses` |
+
+**자동 활성화 조건:**
+```yaml
+# application.yml
+knet:
+  commons:
+    web:
+      enabled: true       # 웹 설정 활성화
+    security:
+      enabled: true       # 보안 설정 활성화 (선택)
+```
+
+Spring Boot AutoConfiguration이 `ConditionalOnWebApplication` 조건으로 Servlet/Reactive를 **자동 감지**합니다.
+
+---
+
+### 3.2 세션 처리 파이프라인
+
+#### 전체 흐름 (요청 → 응답)
+
+```
+HTTP 요청 (KSESSIONID 쿠키/헤더 or JWT 토큰)
+  │
+  ▼
+┌─────────────────────────────────┐
+│  ① SessionLoadFilter/Interceptor │  세션 추출 & 복호화
+│     - 쿠키 KSESSIONID           │
+│     - 헤더 KSESSIONID           │
+│     - JWT claim "session"       │
+│     → exchange/request attribute │
+│       "KSESSION"에 Session 저장  │
+└─────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────┐
+│  ② RequireSessionFilter/        │  @RequireSession 검증
+│     Interceptor                  │
+│     - 세션 존재 확인 → 401       │
+│     - brand 허용 확인 → 403     │
+│     - sessionType 허용 확인 → 403│
+└─────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────┐
+│  ③ SessionArgumentResolver      │  컨트롤러 파라미터 자동 주입
+│     fun handler(session: Session)│
+└─────────────────────────────────┘
+```
+
+#### 세션 추출 우선순위
+1. **쿠키 (KSESSIONID)**: AES 암호화된 Session JSON → Encryptor.decryptAES → ObjectMapper.readValue
+2. **헤더 (KSESSIONID)**: 동일 방식
+3. **JWT 토큰**: SecurityContext → JwtAuthenticationToken → claims["session"] → ObjectMapper.readValue
+
+#### @RequireSession 어노테이션
+```kotlin
+// 클래스 레벨 적용 (모든 메서드에 세션 필요)
+@RequireSession
+class UserController { ... }
+
+// 메서드 레벨 적용 (특정 메서드만)
+@RequireSession(brands = [Brand.BAROBILL], sessionTypes = [SessionType.MANAGER])
+fun adminOnly(session: Session) { ... }
+```
+
+- `brands`가 비어있으면 → 모든 브랜드 허용
+- `sessionTypes`가 비어있으면 → 모든 세션 타입 허용
+- 세션이 없으면 → 401 UNAUTHORIZED
+- 브랜드/타입이 불일치하면 → 403 FORBIDDEN
+
+---
+
+### 3.3 Strapi 스타일 쿼리 시스템
+
+> 프론트엔드에서 복잡한 검색 조건을 HTTP 쿼리 파라미터로 전달하는 표준화된 방식
+
+#### 지원하는 쿼리 파라미터 형식
+
+**필터링:**
+```
+# 단순 조건
+GET /items?filters[serviceType][$eq]=FAX
+GET /items?filters[name][$contains]=홍
+
+# OR 조건
+GET /items?filters[$or][0][status][$eq]=ACTIVE&filters[$or][1][status][$eq]=PENDING
+
+# AND 조건 (기본)
+GET /items?filters[startDate][$gte]=2024-01-01&filters[endDate][$lte]=2024-12-31
+
+# NOT 조건
+GET /items?filters[$not][status][$eq]=DELETED
+
+# IN 조건
+GET /items?filters[type][$in][0]=FAX&filters[type][$in][1]=EMAIL
+```
+
+**정렬:**
+```
+GET /items?sort=doDt,desc
+GET /items?sort=name,asc&sort=doDt,desc   # 다중 정렬
+```
+
+**페이징:**
+```
+GET /items?page=0&size=20
+GET /items?unpaged=true                    # 전체 조회
+```
+
+**필드 선택:**
+```
+GET /items?fields=name,status,doDt
+```
+
+#### 지원 연산자 목록
+
+| 연산자 | 의미 | SQL |
+|--------|------|-----|
+| `$eq` | 같음 | `column = value` |
+| `$eqi` | 같음 (대소문자 무시) | `LOWER(column) = LOWER(value)` |
+| `$ne` | 같지 않음 | `column != value` |
+| `$lt` | 미만 | `column < value` |
+| `$lte` | 이하 | `column <= value` |
+| `$gt` | 초과 | `column > value` |
+| `$gte` | 이상 | `column >= value` |
+| `$in` | 포함 | `column IN (...)` |
+| `$notIn` | 미포함 | `column NOT IN (...)` |
+| `$contains` | 포함 (LIKE) | `column LIKE '%value%'` |
+| `$containsi` | 포함 (대소문자 무시) | `LOWER(column) LIKE LOWER('%value%')` |
+| `$notContains` | 미포함 | `column NOT LIKE '%value%'` |
+| `$startsWith` | 시작 | `column LIKE 'value%'` |
+| `$endsWith` | 끝남 | `column LIKE '%value'` |
+| `$null` | NULL | `column IS NULL` |
+| `$notNull` | NOT NULL | `column IS NOT NULL` |
+| `$between` | 범위 | `column BETWEEN v0 AND v1` |
+
+#### 처리 흐름
+
+```
+HTTP 쿼리 파라미터
+  │
+  ▼
+┌─────────────────────────────────┐
+│  StrapiQueryParser               │
+│  unflattenParams(): flat Map →   │
+│    중첩 Map으로 변환              │
+│  parseFilters(): FilterNode 트리 │
+│  parseFields(): 필드 목록        │
+│  parseSort(): 정렬 조건          │
+└─────────────────────────────────┘
+  │
+  ▼  StrapiQuery (중간 표현)
+  │
+  ├──▶ JooqSearchCriteria.from(query, fieldMap)
+  │      → jOOQ Condition, SortField 등으로 변환
+  │
+  └──▶ MybatisSearchCriteria.from(query, fields)
+         → SQL WHERE절, ORDER BY절 문자열로 변환
+```
+
+#### StrapiQuery 데이터 모델
+```kotlin
+data class StrapiQuery(
+    val filters: FilterNode?,       // 필터 조건 트리 (AND/OR/NOT 중첩 가능)
+    val fields: List<String>,       // 조회할 필드
+    val page: Int,                  // 페이지 번호 (0부터)
+    val size: Int,                  // 페이지 크기
+    val sort: List<SortOrder>,      // 정렬 조건
+    val unpaged: Boolean = false    // 페이징 무시
+)
+```
+
+#### FilterNode (필터 조건 트리)
+```kotlin
+sealed class FilterNode {
+    data class Condition(
+        val field: String,           // 필드명 (camelCase)
+        val operator: FilterOperator, // 연산자 ($eq, $contains 등)
+        val value: Any?              // 비교값
+    ) : FilterNode()
+
+    data class LogicalGroup(
+        val logic: Logic,            // AND, OR, NOT
+        val children: List<FilterNode>
+    ) : FilterNode()
+}
+```
+
+---
+
+### 3.4 jOOQ 쿼리 빌더
+
+#### JooqQueryBuilder
+```kotlin
+// FilterNode → jOOQ Condition 변환
+val condition = JooqQueryBuilder.buildCondition(query.filters)
+val sortFields = JooqQueryBuilder.buildSortFields(query.sort)
+```
+
+**특징:**
+- camelCase → snake_case 자동 변환 (`toSnakeCase()`)
+- 대소문자 무시 연산자는 `DSL.lower()` 사용
+- LIKE 연산자에 와일드카드 자동 추가
+
+#### JooqSearchCriteria
+```kotlin
+// 사용 예시 (도메인 서비스에서)
+val criteria = JooqSearchCriteria.from(
+    query = strapiQuery,
+    fieldMap = DomainClass.FIELD_MAP,          // 필드명 → jOOQ Field 매핑
+    fieldExpansions = DomainClass.FIELD_EXPANSIONS  // "session" → [brand, product, ...] 확장
+)
+
+// jOOQ 쿼리에 적용
+dslContext.select(criteria.selectFields)
+    .from(TABLE)
+    .where(criteria.condition)
+    .orderBy(criteria.sortFields)
+    .limit(criteria.limit)
+    .offset(criteria.offset)
+```
+
+#### jOOQ Record 확장 함수
+```kotlin
+// 동적 필드 선택 시 안전한 값 접근
+record.getOrNull(field)          // 필드 없으면 null
+record.getOrDefault(field, default)  // 필드 없으면 기본값
+```
+
+---
+
+### 3.5 MyBatis 쿼리 빌더
+
+#### MybatisQueryBuilder
+```kotlin
+val builder = MybatisQueryBuilder()
+val params = mutableMapOf<String, Any?>()
+val whereClause = builder.buildWhereClause(filters, params)
+val selectClause = builder.buildSelectClause(fields, fieldExpansions)
+val orderByClause = builder.buildOrderByClause(sort)
+```
+
+**특징:**
+- 파라미터 바인딩 방식: `#{params.paramName}` 형태로 SQL Injection 방지
+- IN 절은 MyBatis `<foreach>` 문법 사용 후 `MybatisSqlProvider`에서 인덱스 참조로 변환
+- 컬럼명에 `"` 따옴표를 감싸 대소문자 구분 (PostgreSQL)
+
+#### MybatisSearchCriteria
+```kotlin
+val criteria = MybatisSearchCriteria.from(
+    query = strapiQuery,
+    fields = DomainClass.FIELDS,
+    fieldExpansions = DomainClass.FIELD_EXPANSIONS
+)
+// criteria.selectClause  → "brand", "product", "partner_seq"
+// criteria.whereClause   → "partner_seq" = #{params.partnerSeq_0_0}
+// criteria.orderByClause → "do_dt" DESC
+// criteria.params        → {partnerSeq_0_0: 123}
+```
+
+#### MybatisSqlProvider (추상 클래스)
+```kotlin
+// 도메인별 SqlProvider 정의
+class FaxSqlProvider : MybatisSqlProvider(
+    tableName = "fax",
+    defaultCondition = """"is_deleted" = FALSE""",
+    defaultOrderBy = """"do_dt" DESC"""
+)
+```
+
+**자동 생성하는 SQL:**
+- `search()`: SELECT + FROM + WHERE + ORDER BY + LIMIT OFFSET
+- `searchCount()`: SELECT COUNT(*) + FROM + WHERE
+- `buildWhereSql()`: `<foreach>` 태그를 실제 인덱스 참조로 변환 (`#{params.key[0]}`)
+
+---
+
+### 3.6 Security Auto Configuration
+
+#### JWT 인증 흐름
+```
+HTTP 요청 (Authorization: Bearer <jwt>)
+  │
+  ▼
+┌─────────────────────────────────┐
+│  Spring Security Filter Chain    │
+│  JwtDecoder (RSA 공개키로 검증)  │
+│  → JwtAuthenticationToken       │
+└─────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────┐
+│  SessionLoadFilter/Interceptor   │
+│  JWT claims["session"] → Session │
+└─────────────────────────────────┘
+```
+
+#### JwtHelper
+```kotlin
+// JWT 검증용 공개키 로드 (classpath:jwtkeystore.jks)
+JwtHelper.loadPublicKey(): RSAPublicKey
+
+// 테스트용 JWT 토큰 생성
+JwtHelper(objectMapper).generate(session, expirationSeconds)
+```
+
+- JKS (Java KeyStore)에서 RSA 키 쌍 로드
+- RS256 알고리즘으로 서명
+- claim에 Session JSON 포함
+
+#### 인증 에러 처리
+```
+JWT 검증 실패 시:
+├── 만료된 토큰 → EXPIRED_TOKEN (401)
+├── 유효하지 않은 토큰 → INVALID_TOKEN (401)
+├── 인증 정보 없음 → UNAUTHORIZED (401)
+└── 접근 권한 없음 → FORBIDDEN (403)
+```
+
+#### 핵심 설정
+
+**Servlet (CommonsSecurityAutoConfiguration):**
+```kotlin
+http
+    .csrf { it.disable() }
+    .authorizeHttpRequests { it.anyRequest().permitAll() }
+    .oauth2ResourceServer { jwt → ... }
+```
+
+**Reactive (CommonsReactiveSecurityAutoConfiguration):**
+```kotlin
+http
+    .csrf { it.disable() }
+    .headers { it.disable() }
+    .authorizeExchange { it.anyExchange().permitAll() }
+    .oauth2ResourceServer { jwt → ... }
+```
+
+> **중요:** `permitAll()`로 모든 요청을 허용하되, `@RequireSession` 어노테이션으로 세션 기반 인가를 별도로 처리합니다. JWT는 **세션 전달 수단**으로만 사용됩니다.
+
+---
+
+### 3.7 전역 예외 처리
+
+#### Servlet (GlobalExceptionHandler)
+
+| 예외 | 에러 코드 | HTTP 상태 |
+|------|----------|-----------|
+| `BusinessException` | 동적 (errorCode에 따라) | 동적 |
+| `MethodArgumentNotValidException` | VALIDATION_ERROR | 400 |
+| `MethodArgumentTypeMismatchException` | TYPE_MISMATCH | 400 |
+| `MissingServletRequestParameterException` | BAD_REQUEST | 400 |
+| `HttpRequestMethodNotSupportedException` | METHOD_NOT_ALLOWED | 405 |
+| `AccessDeniedException` | FORBIDDEN | 403 |
+| `Exception` (기타) | INTERNAL_SERVER_ERROR | 500 |
+
+#### Reactive (ReactiveGlobalExceptionHandler)
+
+| 예외 | 에러 코드 | HTTP 상태 |
+|------|----------|-----------|
+| `BusinessException` | 동적 | 동적 |
+| `WebExchangeBindException` | VALIDATION_ERROR | 400 |
+| `ServerWebInputException` | BAD_REQUEST | 400 |
+| `AccessDeniedException` | FORBIDDEN | 403 |
+| `Exception` (기타) | INTERNAL_SERVER_ERROR | 500 |
+
+**Reactive 추가 구성:**
+- `BusinessExceptionWebExceptionHandler` (WebExceptionHandler): 필터 레벨에서 발생하는 BusinessException 처리
+  - `@Order(Ordered.HIGHEST_PRECEDENCE)`로 최우선 순위
+  - 필터에서 throw된 예외는 `@RestControllerAdvice`에 도달하지 않으므로 별도 WebExceptionHandler 필요
+
+#### GlobalBinderAdvice (Servlet 전용)
+```kotlin
+@InitBinder
+fun initBinder(binder: WebDataBinder) {
+    binder.initDirectFieldAccess()
+}
+```
+- Setter 대신 **필드 직접 접근** 방식으로 바인딩
+- Kotlin data class의 프로퍼티에 직접 값 설정
+
+---
+
+### 3.8 응답 시간 측정
+
+#### Servlet: RequestTimingInterceptor
+```
+preHandle → request에 시작 시각 저장
+afterCompletion → X-Response-Time: {duration}ms 헤더 설정
+```
+- `response.isCommitted` 확인 후 헤더 설정 (이미 커밋된 응답 방어)
+
+#### Reactive: RequestTimingFilter
+```kotlin
+exchange.response.beforeCommit {
+    val duration = System.currentTimeMillis() - startTime
+    exchange.response.headers.set("X-Response-Time", "${duration}ms")
+    Mono.empty()
+}
+```
+- `beforeCommit` 콜백으로 응답 전송 직전에 헤더 추가
+
+---
+
+### 3.9 Auto Configuration 등록
+
+파일: `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
+```
+com.knet.commons.web.server.servlet.config.CommonsWebAutoConfiguration
+com.knet.commons.web.server.servlet.config.CommonsSecurityAutoConfiguration
+com.knet.commons.web.server.reactive.config.CommonsReactiveWebAutoConfiguration
+com.knet.commons.web.server.reactive.config.CommonsReactiveSecurityAutoConfiguration
+```
+
+Spring Boot 3.x 방식의 Auto Configuration 등록. 라이브러리를 의존성에 추가하고 `knet.commons.web.enabled=true` 설정만 하면 모든 공통 기능이 자동 등록됩니다.
+
+---
+
+## 4. commons-web-client 모듈
+
+> 패키지: `com.knet.commons.web.client`
+>
+> 마이크로서비스 간 API 호출 표준 클라이언트
+
+### 4.1 ApiClient
+
+```kotlin
+class ApiClient(
+    val restClient: RestClient,           // Spring RestClient
+    val objectMapper: ObjectMapper,       // JSON 직렬화
+    val baseUrl: String,                  // API 기본 URL
+    val clientRegistrationId: String      // OAuth2 등록 ID
+)
+```
+
+#### 제공 메서드
+| 메서드 | 설명 |
+|--------|------|
+| `get\<T\>(path, session?)` | GET 요청 |
+| `post\<T\>(path, body, session?)` | POST 요청 |
+| `put\<T\>(path, body, session?)` | PUT 요청 |
+| `delete\<T\>(path, session?)` | DELETE 요청 |
+
+- **모든 메서드는 `inline` + `reified`** → 제네릭 타입 정보 유지, 런타임에 타입 소거 없음
+
+#### 인증 흐름
+```
+ApiClient.get("/users/1", session)
+  │
+  ├── OAuth2ClientHttpRequestInterceptor
+  │   → Authorization: Bearer <access_token> 자동 추가
+  │
+  └── Session 전달 (session != null일 때)
+      → KSESSIONID 헤더: Encryptor.encryptAES(sessionJson)
+      → Cookie 헤더: KSESSIONID=<encrypted>
+```
+
+#### 사용 예시
+```kotlin
+// Bean 등록
+@Configuration
+@Import(CommonsClientConfig::class)
+class MyConfig(
+    private val restClient: RestClient,
+    private val objectMapper: ObjectMapper
+) {
+    @Bean
+    fun userApiClient() = ApiClient(
+        restClient = restClient,
+        objectMapper = objectMapper,
+        baseUrl = "http://user-service",
+        clientRegistrationId = "knet"
+    )
+}
+
+// 서비스에서 사용
+@Service
+class UserService(private val userApiClient: ApiClient) {
+    fun getUser(id: Long, session: Session): User? {
+        return userApiClient.get<User>("/users/$id", session)
+    }
+}
+```
+
+### 4.2 CommonsClientConfig
+
+```kotlin
+@EnableConfigurationProperties(ApiClientProperties::class)
+class CommonsClientConfig {
+    @Bean fun clientHttpRequestFactory()  // 타임아웃 설정
+    @Bean fun restClient()                // OAuth2 인터셉터 + 에러 핸들러 자동 적용
+}
+```
+
+**타임아웃 설정:**
+```yaml
+api:
+  client:
+    connect-timeout: 5s    # 기본값 5초
+    read-timeout: 30s      # 기본값 30초
+```
+
+### 4.3 에러 처리
+
+#### ApiClientErrorHandler
+```kotlin
+// 원격 API 에러 응답 처리
+class ApiClientErrorHandler(objectMapper: ObjectMapper) {
+    fun handleError(response: ClientHttpResponse) {
+        // 1. 응답 본문을 ErrorResponse로 파싱 시도
+        // 2. 파싱 실패 시 UNKNOWN_ERROR ErrorResponse 생성
+        // 3. ApiClientException throw
+    }
+}
+```
+
+#### ApiClientException
+```kotlin
+class ApiClientException(
+    val errorResponse: ErrorResponse  // 원격 API의 에러 응답 그대로 전달
+) : RuntimeException(errorResponse.message)
+```
+
+**에러 전파 흐름:**
+```
+서비스 A → ApiClient → 서비스 B
+                          │
+                      에러 발생!
+                          │
+                          ▼
+                    ErrorResponse (JSON)
+                          │
+                          ▼
+              ApiClientErrorHandler.handleError()
+                          │
+                          ▼
+              throw ApiClientException(errorResponse)
+                          │
+                          ▼
+              서비스 A에서 catch 또는 GlobalExceptionHandler로 전파
+```
+
+---
+
+## 5. Servlet vs Reactive 비교
+
+이 라이브러리가 두 스택을 이중 지원하는 이유와 차이점:
+
+### 5.1 왜 이중 지원?
+- 기존 서비스는 Spring MVC(Servlet) 기반
+- 신규 서비스는 Spring WebFlux(Reactive) 기반
+- 공통 라이브러리가 **둘 다 지원**해야 어떤 서비스에서든 사용 가능
+
+### 5.2 핵심 차이
+
+| 항목 | Servlet | Reactive |
+|------|---------|----------|
+| 세션 저장소 | `HttpServletRequest.setAttribute()` | `ServerWebExchange.attributes[]` |
+| 세션 읽기 | `SecurityContextHolder.getContext()` | `ReactiveSecurityContextHolder.getContext()` |
+| 요청 처리 | `HandlerInterceptor` (동기) | `WebFilter` (비동기, Mono/Flux) |
+| 예외 처리 | `@RestControllerAdvice` | `@RestControllerAdvice` + `WebExceptionHandler` |
+| 반환 타입 | `ResponseEntity\<T\>` | `Mono\<T\>` |
+| 필터 순서 | `InterceptorRegistry` 등록 순서 | `@Order` 어노테이션 |
+
+### 5.3 필터 실행 순서
+
+**Servlet:**
+```
+RequestTimingInterceptor (preHandle)
+  → SessionLoadInterceptor (preHandle)
+    → RequireSessionInterceptor (preHandle)
+      → Controller
+    ← (postHandle)
+  ← (afterCompletion)
+← RequestTimingInterceptor (afterCompletion) + X-Response-Time 헤더
+```
+
+**Reactive:**
+```
+RequestTimingFilter (@Order HIGHEST_PRECEDENCE)
+  → SessionLoadFilter (@Order 0)
+    → RequireSessionFilter (@Order 1)
+      → Controller
+    ← 
+  ←
+← beforeCommit → X-Response-Time 헤더
+```
+
+---
+
+## 6. 설정 프로퍼티 요약
+
+```yaml
+# 웹 공통 기능 활성화
+knet:
+  commons:
+    web:
+      enabled: true              # 필수: 웹 설정 전체 ON/OFF
+      trace-enabled: false       # 에러 응답에 스택 트레이스 포함 (개발용)
+    security:
+      enabled: true              # 선택: JWT 보안 설정 ON/OFF
+
+# API 클라이언트 타임아웃
+api:
+  client:
+    connect-timeout: 5s
+    read-timeout: 30s
+```
+
+---
+
+## 7. 전체 의존 관계도
+
+```
+┌─────────────────────────────────────────────────────┐
+│                 마이크로서비스 (예: fax-api)           │
+│                                                      │
+│  @RequireSession                                     │
+│  fun handler(@StrapiQueryParam query, session: Session)│
+│                                                      │
+│  val criteria = JooqSearchCriteria.from(query, ...)  │
+│  faxApiClient.get<Fax>("/fax/$id", session)          │
+└──────────┬──────────────────────────┬────────────────┘
+           │                          │
+           ▼                          ▼
+┌──────────────────┐    ┌──────────────────────┐
+│ commons-web-server│    │  commons-web-client   │
+│                  │    │                      │
+│ - AutoConfig     │    │ - ApiClient          │
+│ - SessionLoad    │    │ - CommonsClientConfig│
+│ - RequireSession │    │ - ApiClientErrorHandler│
+│ - StrapiQuery    │    │                      │
+│ - JooqBuilder    │    └──────────┬───────────┘
+│ - MybatisBuilder │               │
+│ - JWT/Security   │               │
+└──────────┬───────┘               │
+           │                       │
+           ▼                       ▼
+     ┌─────────────────────────────────┐
+     │          commons                 │
+     │                                  │
+     │ - Session, Brand, SessionType   │
+     │ - BusinessException, ErrorCode  │
+     │ - ErrorResponse                 │
+     │ - Encryptor (AES)               │
+     │ - StringExtensions              │
+     │ - TypeHandlers (MyBatis)        │
+     │ - NoArg                         │
+     └─────────────────────────────────┘
+```
+
+---
+
+## 8. 자주 쓰는 사용 패턴 정리
+
+### 8.1 기본 CRUD 컨트롤러
+```kotlin
+@RestController
+@RequestMapping("/fax")
+@RequireSession  // 전체 컨트롤러에 세션 필요
+class FaxController(private val faxService: FaxService) {
+
+    @GetMapping
+    fun search(@StrapiQueryParam query: StrapiQuery, session: Session): Page<Fax> {
+        return faxService.search(query)
+    }
+
+    @GetMapping("/{id}")
+    fun get(@PathVariable id: Long, session: Session): Fax {
+        return faxService.getById(id)
+    }
+
+    @PostMapping
+    fun create(@RequestBody request: CreateFaxRequest, session: Session): Fax {
+        return faxService.create(request, session)
+    }
+}
+```
+
+### 8.2 서비스에서 검색 쿼리 사용 (jOOQ)
+```kotlin
+@Service
+class FaxService(private val dslContext: DSLContext) {
+
+    fun search(query: StrapiQuery): Page<Fax> {
+        val criteria = JooqSearchCriteria.from(query, Fax.FIELD_MAP, Fax.FIELD_EXPANSIONS)
+
+        val total = dslContext.selectCount()
+            .from(FAX)
+            .where(criteria.condition)
+            .fetchOne(0, Long::class.java) ?: 0
+
+        val records = dslContext.select(criteria.selectFields)
+            .from(FAX)
+            .where(criteria.condition)
+            .orderBy(criteria.sortFields)
+            .limit(criteria.limit)
+            .offset(criteria.offset)
+            .fetch()
+
+        return PageImpl(records.map { ... }, query.toPageable(), total)
+    }
+}
+```
+
+### 8.3 서비스 간 API 호출
+```kotlin
+@Service
+class NotificationService(private val userApiClient: ApiClient) {
+
+    fun notifyUser(userId: Long, message: String, session: Session) {
+        val user = userApiClient.get<User>("/users/$userId", session)
+            ?: throw BusinessException(MyErrorCode.USER_NOT_FOUND)
+        // ... 알림 발송 로직
+    }
+}
+```
+
+### 8.4 커스텀 ErrorCode 정의
+```kotlin
+enum class FaxErrorCode(
+    override val status: Int,
+    override val text: String
+) : ErrorCode {
+    FAX_NOT_FOUND(404, "팩스를 찾을 수 없음."),
+    FAX_SEND_FAILED(500, "팩스 발송 실패."),
+    FAX_ALREADY_SENT(400, "이미 발송된 팩스.");
+
+    override val code: String get() = this.name
+}
+```
+
+---
+
+## 9. 최근 주요 변경 이력
+
+| 커밋 | 내용 |
+|------|------|
+| `085c1fc` | SessionLoadFilter/RequireSessionFilter 필터 체인 이중 실행 버그 수정 |
+| `9656cf9` | RequestTimingFilter read-only 응답 헤더 UnsupportedOperationException 방어 |
+| `cd39cea` | Reactive ErrorResponses.addDurationHeader 제거 (Reactive에서는 불필요) |
+| `855c202` | RequestTimingFilter를 beforeCommit 방식으로 변경 |
+| `80acd3d` | 버전 1.0.0 시작 |
+
+---
+
+## 10. 핵심 설계 원칙 요약
+
+1. **AutoConfiguration 기반**: 의존성 추가 + 프로퍼티 설정만으로 모든 공통 기능 활성화
+2. **Servlet/Reactive 이중 지원**: 어떤 스택의 서비스든 동일한 라이브러리 사용
+3. **세션 전파 표준화**: KSESSIONID (쿠키/헤더) + JWT claim으로 마이크로서비스 간 세션 전달
+4. **에러 응답 표준화**: ErrorCode → BusinessException → ErrorResponse 일관된 흐름
+5. **쿼리 추상화**: Strapi 스타일 파라미터 → FilterNode → jOOQ/MyBatis SQL 자동 변환
+6. **선택적 의존성**: jOOQ, MyBatis는 `compileOnly`로 사용처에서 선택
+
+---
+
+## 11. commons-util → commons 마이그레이션 변경 사항
+
+> 구 버전(`commons-util`, Java/Spring Boot 2.3)에서 신 버전(`commons`, Kotlin/Spring Boot 3.x)으로 전환하면서 **제거, 수정, 신규 추가**된 내용을 정리합니다.
+
+### 11.1 전체 구조 변화
+
+| 항목 | 구 버전 (commons-util) | 신 버전 (commons) |
+|------|----------------------|------------------|
+| **언어** | Java | Kotlin |
+| **Spring Boot** | 2.3.0 (Hoxton) | 3.x (Spring Boot 3) |
+| **JDK** | Java 8~11 | Java 25 |
+| **모듈 수** | 16개 (java 15 + node 1) | 3개 (commons, web-server, web-client) |
+| **HTTP 클라이언트** | WebClient (Reactive) | RestClient (동기, Spring 6.1+) |
+| **API 응답 형식** | ApiResponse 래핑 구조 | 직접 반환 (래핑 제거) |
+| **설정 방식** | 수동 @Configuration | AutoConfiguration 자동 등록 |
+| **웹 스택** | Servlet(MVC)만 지원 | Servlet + Reactive 이중 지원 |
+| **OAuth2** | Spring Security OAuth2 (deprecated) | Spring Security 6 OAuth2 Resource Server |
+| **Jackson** | com.fasterxml.jackson | tools.jackson (Jackson 3.x) |
+| **빌드** | Gradle (Groovy DSL) | Gradle (Kotlin DSL) + Nx |
+
+### 11.2 모듈 매핑표
+
+```
+commons-util (구)                    commons (신)
+─────────────────────────────────    ────────────────────────────────
+session-util                    ──▶  commons (session 패키지)
+rest-api-util (exception)       ──▶  commons (exception 패키지)
+rest-api-util (interceptor)     ──▶  commons-web-server (servlet + reactive)
+rest-api-util (resolver)        ──▶  commons-web-server (resolver)
+rest-api-util (config)          ──▶  commons-web-server (AutoConfiguration)
+rest-api-util (ApiClient)       ──▶  commons-web-client (ApiClient)
+rest-api-oauth2-util            ──▶  commons-web-server (Security) + commons-web-client
+commons-util (encrypt)          ──▶  commons (Encryptor)
+datasource-util (TypeHandler)   ──▶  commons (mybatis 패키지)
+
+rest-api-util (ApiResponse 등)  ──▶  ❌ 제거됨
+rest-api-util (AOP)             ──▶  ❌ 제거됨
+http-util                       ──▶  ❌ 제거됨 (RestClient로 대체)
+pageable-util                   ──▶  ❌ 제거됨 (StrapiQuery로 대체)
+commons-util (StringUtil 등)    ──▶  ❌ 제거됨 (필요 시 서비스에서 직접)
+
+batch-util                      ──▶  미이관 (기존 commons-util에서 계속 사용)
+cert-util                       ──▶  미이관
+hometax-util                    ──▶  미이관
+mail-util                       ──▶  미이관
+image-util                      ──▶  미이관
+windows-util                    ──▶  미이관
+oauth2-util                     ──▶  미이관
+recaptcha-util                  ──▶  미이관
+restdocs-util                   ──▶  미이관
+```
+
+---
+
+### 11.3 제거된 항목 (REMOVED)
+
+#### A. ApiResponse 래핑 구조 전체 제거
+
+**구 버전:**
+```java
+// 모든 API 응답을 ApiResponse로 래핑
+public class ApiResponse<T> {
+    private boolean success;
+    private T data;
+    private String code;
+    private String message;
+    private String detail;
+    private Session session;
+    private long duration;
+}
+
+// 타입별 추가 래핑 클래스
+ApiListResponse<T>      // List<T> 응답용
+ApiMapResponse<K,V>     // Map<K,V> 응답용
+ApiPageableResponse<T>  // Page<T> 응답용
+```
+
+**신 버전:** 전부 제거됨. 컨트롤러에서 데이터를 직접 반환합니다.
+```kotlin
+// 에러일 때만 ErrorResponse 사용, 정상 응답은 직접 반환
+@GetMapping("/{id}")
+fun get(@PathVariable id: Long): Fax {
+    return faxService.getById(id)
+}
+```
+
+**제거 이유:** 
+- 클라이언트에서 `response.data`로 한 단계 더 꺼내야 하는 불편함
+- `success`, `duration`, `session` 등 불필요한 정보가 응답에 포함
+- REST API 표준 관행에 맞지 않음
+
+**영향받는 파일들:**
+
+| 제거된 파일 | 설명 |
+|------------|------|
+| `ApiResponse.java` | 단건 응답 래핑 |
+| `ApiListResponse.java` | 리스트 응답 래핑 |
+| `ApiMapResponse.java` | 맵 응답 래핑 |
+| `ApiPageableResponse.java` | 페이징 응답 래핑 |
+
+---
+
+#### B. ApiControllerAspect (AOP 응답 래핑) 제거
+
+**구 버전:**
+```java
+// AOP로 컨트롤러 반환값을 자동으로 ApiResponse로 래핑
+@Aspect
+public class ApiControllerAspect {
+    @Around("@within(org.springframework.web.bind.annotation.RestController)")
+    public Object wrapResponse(ProceedingJoinPoint joinPoint) {
+        Object result = joinPoint.proceed();
+        return ApiResponse.success(result, session, duration);
+    }
+}
+```
+
+**신 버전:** 전부 제거됨. 컨트롤러가 직접 응답 타입을 반환합니다.
+
+**제거 이유:** AOP 자동 래핑이 디버깅을 어렵게 하고, 응답 형식을 예측하기 힘들게 만듦
+
+---
+
+#### C. ApiRequester 제거
+
+**구 버전:**
+```java
+// 마이크로서비스 호출 후 ApiResponse로 반환
+public class ApiRequester {
+    public ApiResponse<T> get(url, headers, session)
+    public ApiListResponse<T> getList(url, headers, session)
+    public ApiMapResponse<K,V> getMap(url, headers, session)
+    public ApiPageableResponse<T> getPageable(url, headers, session)
+    // POST, PUT, PATCH, DELETE도 각각 오버로드
+}
+```
+
+**신 버전:** 제거됨. `ApiClient`로 통합, 제네릭으로 직접 타입 지정.
+```kotlin
+// 신 버전: 단순하고 직관적
+apiClient.get<User>("/users/1", session)
+apiClient.get<List<User>>("/users", session)
+```
+
+---
+
+#### D. SessionUtil 제거
+
+**구 버전:**
+```java
+public class SessionUtil {
+    public static Session getSession(HttpServletRequest request) {
+        // 쿠키/헤더에서 세션 추출
+    }
+}
+```
+
+**신 버전:** 로직이 `SessionLoadInterceptor`/`SessionLoadFilter`에 직접 통합됨. 별도 유틸 클래스 불필요.
+
+---
+
+#### E. SessionSerializer / SessionDeserializer 제거
+
+**구 버전:**
+```java
+// Jackson 직렬화기로 Session ↔ 암호화된 JSON 변환
+public class SessionSerializer extends JsonSerializer<Session> {
+    // Session → AES 암호화 JSON
+}
+public class SessionDeserializer extends JsonDeserializer<Session> {
+    // AES 암호화 JSON → Session
+}
+```
+
+**신 버전:** 제거됨. `Encryptor.encryptAES()` / `decryptAES()`와 `ObjectMapper`를 직접 조합하여 사용.
+```kotlin
+// 암호화: objectMapper → JSON → Encryptor.encryptAES
+// 복호화: Encryptor.decryptAES → JSON → objectMapper.readValue
+```
+
+**제거 이유:** Session이 항상 암호화되어야 할 필요가 없고, 용도에 따라 선택적으로 암호화/복호화
+
+---
+
+#### F. SessionSearchDto / DateTimeRange 제거
+
+**구 버전:**
+```java
+// 검색 조건 DTO (쉼표 구분 문자열)
+public class SessionSearchDto {
+    private String brands;      // "BAROBILL,BIZ4IN"
+    private String sessionTypes; // "USER,PARTNER"
+    // getter에서 split 후 파싱
+}
+
+// 날짜 범위
+public class DateTimeRange {
+    private LocalDateTime startDT;
+    private LocalDateTime endDT;
+}
+```
+
+**신 버전:** 제거됨. Strapi 쿼리 시스템으로 완전 대체.
+```
+# 구: brands=BAROBILL,BIZ4IN
+# 신: filters[brand][$in][0]=BAROBILL&filters[brand][$in][1]=BIZ4IN
+
+# 구: DateTimeRange (startDT, endDT)
+# 신: filters[doDt][$gte]=2024-01-01&filters[doDt][$lte]=2024-12-31
+```
+
+---
+
+#### G. SnakeToCamelPageableArgumentResolver 제거
+
+**구 버전:**
+```java
+// snake_case 정렬 파라미터를 camelCase로 변환
+public class SnakeToCamelPageableArgumentResolver 
+    extends PageableHandlerMethodArgumentResolver {
+    // sort=partner_seq,desc → partnerSeq DESC
+}
+```
+
+**신 버전:** 제거됨. `StrapiQueryArgumentResolver`가 정렬을 포함한 전체 쿼리 파라미터를 처리.
+
+---
+
+#### H. 암호화 유틸리티 대폭 축소
+
+| 구 버전 파일 | 신 버전 | 상태 |
+|-------------|--------|------|
+| `EncryptUtil.java` (AES, SEED, SHA-512, URL인코딩) | `Encryptor.kt` (AES만) | **축소** |
+| `StringEncrypter.java` (커스텀 키 AES) | — | **제거** |
+| `Base64Encoder.java` (커스텀 Base64) | — | **제거** (Java stdlib `java.util.Base64` 사용) |
+| `RSA.java` (RSA 키 관리) | `JwtHelper.kt` | **JWT로 대체** |
+| `KISA_SEED_CBC.java` (SEED 암호화) | — | **제거** |
+
+**제거 이유:** 신규 서비스에서는 SEED 암호화, 커스텀 Base64 등이 불필요. AES만 세션 암호화에 사용.
+
+---
+
+#### I. 범용 유틸리티 제거
+
+| 구 버전 파일 | 상태 | 이유 |
+|-------------|------|------|
+| `StringUtil.java` (사업자번호 검증, 핸드폰 검증, camelToSnake 등) | **제거** | `toSnakeCase()`/`toCamelCase()`만 Kotlin 확장함수로 이관. 나머지는 각 서비스에서 직접 |
+| `FileUtil.java` (파일 읽기/쓰기/복사 등) | **제거** | 공통 라이브러리에 불필요 |
+| `BigDecimalUtil.java` | **제거** | 공통 라이브러리에 불필요 |
+
+---
+
+#### J. HTTP 유틸리티 모듈 전체 제거
+
+| 구 버전 파일 | 상태 | 대체 |
+|-------------|------|------|
+| `HttpUtil.java` (HttpURLConnection 기반) | **제거** | `RestClient` / `WebClient` 사용 |
+| `HttpResponse.java` | **제거** | Spring의 `ResponseEntity` 사용 |
+| `CookieUtil.java` (쿠키 생성/읽기) | **제거** | Spring의 Cookie 처리 사용 |
+| `IpUtil.java` (IP 추출) | **제거** | 필요 시 서비스에서 직접 구현 |
+
+---
+
+#### K. 페이징 유틸리티 모듈 전체 제거
+
+| 구 버전 파일 | 상태 | 대체 |
+|-------------|------|------|
+| `PageableInfo.java` | **제거** | `StrapiQuery.toPageable()` 사용 |
+| `SimplePage.java` | **제거** | Spring Data `Page\<T\>` 직접 사용 |
+| `SimplePageImpl.java` | **제거** | Spring Data `PageImpl\<T\>` 직접 사용 |
+
+---
+
+#### L. 테스트 유틸리티 제거
+
+| 구 버전 파일 | 상태 |
+|-------------|------|
+| `MockMvcExpectHandlers.java` | **제거** |
+| `ControllerTestUtil.java` | **제거** |
+
+---
+
+### 11.4 수정된 항목 (MODIFIED)
+
+#### A. Session 데이터 모델
+
+**구 버전 (Session.java):**
+```java
+public class Session {
+    private Brand brand;
+    private String product;
+    private Integer partnerSeq;
+    private Integer memberSeq;
+    private Integer userSeq;
+    private SessionType doSessionType;
+    private Integer doSessionSeq;
+    private LocalDateTime doDt;
+    private String doIp;
+
+    // Wrapper 내부 클래스 (Session을 JsonNode로 래핑)
+    public static class Wrapper { ... }
+    // WrappedSession (Session을 암호화 문자열로 래핑)
+    public static class WrappedSession { ... }
+
+    // 빌더 패턴
+    public static Session ofSystem(brand, product) { ... }
+    public static Session ofGuest(brand, product) { ... }
+}
+```
+
+**신 버전 (Session.kt):**
+```kotlin
+data class Session(
+    var brand: Brand? = null,
+    var product: String? = null,
+    var partnerSeq: Int? = null,
+    var memberSeq: Int? = null,
+    var userSeq: Int? = null,
+    var doSessionType: SessionType? = null,
+    var doSessionSeq: Int? = null,
+    var doDt: LocalDateTime? = null,
+    var doIp: String? = null
+) {
+    companion object {
+        fun columns(prefix: String = ""): List<String>
+    }
+}
+```
+
+**주요 변경:**
+
+| 항목 | 구 | 신 |
+|------|---|---|
+| 클래스 타입 | POJO (getter/setter) | Kotlin data class |
+| Wrapper/WrappedSession | 존재 | **제거** |
+| 빌더 패턴 (ofSystem, ofGuest) | 존재 | **제거** (기본값 null로 충분) |
+| columns() 메서드 | 없음 | **추가** (DB 컬럼 매핑용) |
+
+---
+
+#### B. ErrorCode / BusinessException
+
+**구 버전:**
+```java
+// ErrorCode 인터페이스 (동일한 구조)
+public interface ErrorCode {
+    int getStatus();
+    String getCode();
+    String getText();
+}
+
+// DefaultErrorCode (6개 에러 코드)
+public enum DefaultErrorCode implements ErrorCode {
+    BAD_REQUEST(400, "BAD_REQUEST", "잘못된 요청"),
+    UNAUTHORIZED(401, ...),
+    ACCESS_DENIED(403, ...),
+    METHOD_NOT_ALLOWED(405, ...),
+    TYPE_MISMATCH(400, ...),
+    INTERNAL_SERVER_ERROR(500, ...)
+}
+
+// BusinessException (다양한 생성자)
+public class BusinessException extends RuntimeException {
+    private ErrorCode errorCode;
+    private Session session;         // 세션 포함
+    private String detail;
+    private ApiResponse apiResponse; // ApiResponse 포함 가능
+    // 6개 이상의 생성자 오버로드
+}
+```
+
+**신 버전:**
+```kotlin
+// ErrorCode (동일)
+interface ErrorCode {
+    val status: Int
+    val code: String
+    val text: String
+}
+
+// CommonWebServerErrorCode (10개로 확대)
+enum class CommonWebServerErrorCode : ErrorCode {
+    BAD_REQUEST, TYPE_MISMATCH, VALIDATION_ERROR,    // 400 (VALIDATION_ERROR 추가)
+    UNAUTHORIZED, INVALID_TOKEN, EXPIRED_TOKEN,       // 401 (토큰 에러 세분화)
+    FORBIDDEN,                                        // 403 (이름 변경: ACCESS_DENIED → FORBIDDEN)
+    NOT_FOUND,                                        // 404 (신규)
+    METHOD_NOT_ALLOWED,                               // 405
+    INTERNAL_SERVER_ERROR                              // 500
+}
+
+// BusinessException (단순화)
+class BusinessException(
+    val errorCode: ErrorCode,
+    val errorDetail: String? = null,
+    cause: Throwable? = null
+) : RuntimeException(...)
+```
+
+**주요 변경:**
+
+| 항목 | 구 | 신 |
+|------|---|---|
+| 에러 코드 수 | 6개 | 10개 (토큰 관련 세분화) |
+| `ACCESS_DENIED` | 존재 | `FORBIDDEN`으로 이름 변경 |
+| `VALIDATION_ERROR` | 없음 | **추가** |
+| `NOT_FOUND` | 없음 | **추가** |
+| `INVALID_TOKEN` / `EXPIRED_TOKEN` | 없음 | **추가** (JWT 에러 구분) |
+| BusinessException.session | 포함 | **제거** |
+| BusinessException.apiResponse | 포함 | **제거** |
+| 생성자 수 | 6개+ 오버로드 | 1개 (기본값 활용) |
+
+---
+
+#### C. RequireSession 어노테이션
+
+**구 버전:**
+```java
+@Target({ElementType.METHOD, ElementType.TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface RequireSession {
+    // 속성 없음 — 세션 유무만 확인
+}
+```
+
+**신 버전:**
+```kotlin
+@Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class RequireSession(
+    val brands: Array<Brand> = [],           // 허용 브랜드 필터
+    val sessionTypes: Array<SessionType> = [] // 허용 세션 타입 필터
+)
+```
+
+**변경 포인트:** 단순 세션 존재 확인 → **브랜드/세션타입 기반 인가(Authorization)** 기능 추가
+
+---
+
+#### D. SessionLoadInterceptor
+
+**구 버전:**
+```java
+public class SessionLoadInterceptor implements HandlerInterceptor {
+    // SessionUtil.getSession(request)로 세션 추출
+    // 쿠키 → 헤더 순서로 KSESSIONID 확인
+    // JWT/OAuth2 지원 없음 (별도 OAuth2SessionLoadInterceptor에서 처리)
+}
+```
+
+**신 버전:**
+```kotlin
+class SessionLoadInterceptor(private val objectMapper: ObjectMapper) : HandlerInterceptor {
+    // 세션 추출 우선순위: 쿠키 → 헤더 → JWT(SecurityContext)
+    // JWT에서 session claim 추출 기능 내장
+    // Reactive 버전(SessionLoadFilter)도 동시 제공
+}
+```
+
+**변경 포인트:**
+- JWT 세션 추출이 **통합됨** (구: OAuth2SessionLoadInterceptor 별도)
+- ObjectMapper 주입으로 더 유연한 역직렬화
+- Reactive(WebFlux) 버전 추가
+
+---
+
+#### E. ApiClient (HTTP 클라이언트)
+
+**구 버전 (ApiClient.java):**
+```java
+public class ApiClient {
+    private WebClient webClient;   // Reactive WebClient 기반
+    private ObjectMapper objectMapper;
+
+    // 메서드마다 4~5개씩 오버로드
+    public <T> T get(url, Class<T> clazz)
+    public <T> T get(url, Class<T> clazz, session)
+    public <T> T get(url, Class<T> clazz, headers)
+    public <T> T get(url, Class<T> clazz, headers, session)
+    public <T> List<T> getList(url, Class<T> clazz, session)
+    public <K,V> Map<K,V> getMap(url, Class<K>, Class<V>, session)
+    // ... POST, PUT, PATCH, DELETE도 각각 오버로드
+    // 총 40개 이상의 메서드
+}
+```
+
+**신 버전 (ApiClient.kt):**
+```kotlin
+class ApiClient(
+    val restClient: RestClient,          // 동기 RestClient 기반
+    val objectMapper: ObjectMapper,
+    val baseUrl: String,
+    val clientRegistrationId: String     // OAuth2 자동 인증
+) {
+    inline fun <reified T : Any> get(path: String, session: Session? = null): T?
+    inline fun <reified T : Any> post(path: String, body: Any?, session: Session? = null): T?
+    inline fun <reified T : Any> put(path: String, body: Any?, session: Session? = null): T?
+    inline fun <reified T : Any> delete(path: String, session: Session? = null): T?
+    // 총 4개 메서드
+}
+```
+
+**주요 변경:**
+
+| 항목 | 구 | 신 |
+|------|---|---|
+| HTTP 클라이언트 | WebClient (Reactive) | RestClient (동기) |
+| 메서드 수 | 40개+ (오버로드) | 4개 (reified 제네릭) |
+| 타입 지정 | `Class\<T\>` 파라미터 | `reified T` (자동 추론) |
+| List/Map 전용 메서드 | `getList()`, `getMap()` | `get\<List\<T\>\>()` (제네릭으로 통합) |
+| 인증 | 수동 헤더 설정 | OAuth2ClientHttpRequestInterceptor 자동 |
+| baseUrl | 매 호출시 전체 URL | 생성자에서 baseUrl 설정, path만 전달 |
+| 에러 처리 | `.onStatus()` 체인 | `ApiClientErrorHandler` 분리 |
+
+---
+
+#### F. OAuth2 설정
+
+**구 버전:**
+```java
+// 수동 설정
+AbstractOAuth2ClientConfig          // WebClient + ReactiveOAuth2 기반
+OAuth2ApiWebMvcConfig               // MVC 인터셉터 등록
+SessionAccessTokenConverter         // OAuth2 토큰 → Session 변환
+OAuth2SessionLoadInterceptor        // OAuth2 인증 → 세션 로드
+```
+
+**신 버전:**
+```kotlin
+// AutoConfiguration으로 자동 등록
+CommonsSecurityAutoConfiguration      // JWT 검증 + 에러 처리 자동 등록
+CommonsReactiveSecurityAutoConfiguration  // Reactive 버전
+CommonsClientConfig                   // RestClient + OAuth2 인터셉터 자동 구성
+JwtHelper                            // JWT 키 로드/생성
+```
+
+**주요 변경:**
+
+| 항목 | 구 | 신 |
+|------|---|---|
+| 인증 방식 | Spring Security OAuth2 (deprecated) | Spring Security 6 JWT Resource Server |
+| 토큰 형식 | OAuth2 Access Token | JWT (RS256 서명) |
+| 세션 전달 | `SessionAccessTokenConverter` | JWT claim `session` |
+| 설정 방식 | 상속 기반 (`extends AbstractOAuth2ClientConfig`) | 프로퍼티 기반 (`knet.commons.security.enabled=true`) |
+| 클라이언트 인증 | Reactive `ReactiveOAuth2AuthorizedClientManager` | `OAuth2AuthorizedClientManager` (동기) |
+
+---
+
+#### G. 웹 설정 (ApiWebMvcConfig → AutoConfiguration)
+
+**구 버전:**
+```java
+// 서비스마다 수동으로 상속해서 사용
+@Configuration
+public class MyWebConfig extends ApiWebMvcConfig {
+    // 필요 시 오버라이드
+}
+```
+
+**신 버전:**
+```yaml
+# application.yml 한 줄로 자동 활성화
+knet:
+  commons:
+    web:
+      enabled: true
+```
+
+**변경 포인트:** 상속 기반 → AutoConfiguration 기반. 서비스 코드에서 설정 클래스 작성 불필요.
+
+---
+
+#### H. TypeHandler
+
+**구 버전:**
+```java
+// StringArrayTypeHandler → String[] 매핑
+@MappedTypes(String[].class)
+public class StringArrayTypeHandler extends BaseTypeHandler<String[]> { ... }
+
+// UuidTypeHandler
+public class UuidTypeHandler extends BaseTypeHandler<UUID> { ... }
+```
+
+**신 버전:**
+```kotlin
+// StringListArrayTypeHandler → List<String> 매핑 (배열→리스트)
+@MappedTypes(List::class)
+class StringListArrayTypeHandler : BaseTypeHandler<List<String>>() { ... }
+
+// UuidTypeHandler (동일 구조)
+class UuidTypeHandler : BaseTypeHandler<UUID>() { ... }
+```
+
+**변경 포인트:** `String[]` → `List<String>` (Kotlin 컬렉션 관행에 맞춤)
+
+---
+
+#### I. 에러 응답 형식
+
+**구 버전 (ApiResponse 실패 시):**
+```json
+{
+  "success": false,
+  "data": null,
+  "code": "BAD_REQUEST",
+  "message": "잘못된 요청",
+  "detail": "필수 파라미터 누락",
+  "session": { ... },
+  "duration": 123
+}
+```
+
+**신 버전 (ErrorResponse):**
+```json
+{
+  "code": "BAD_REQUEST",
+  "message": "잘못된 요청.",
+  "detail": "필수 파라미터 'name'이(가) 누락되었습니다.",
+  "trace": null,
+  "status": 400
+}
+```
+
+**변경 포인트:**
+- `success`, `data`, `session`, `duration` 필드 제거
+- `status` (HTTP 상태 코드) 추가
+- `trace` (스택 트레이스, 개발 모드 전용) 추가
+- 정상 응답에서는 ErrorResponse를 사용하지 않음 (데이터 직접 반환)
+
+---
+
+### 11.5 신규 추가된 항목 (NEW)
+
+#### A. Strapi 스타일 쿼리 시스템 (완전 신규)
+
+구 버전에는 없던 기능. 프론트엔드에서 복잡한 검색 조건을 표준화된 쿼리 파라미터로 전달.
+
+| 신규 클래스 | 역할 |
+|------------|------|
+| `StrapiQueryParser` | HTTP 파라미터 → StrapiQuery 파싱 |
+| `StrapiQuery` / `FilterNode` | 중간 표현 (필터 트리) |
+| `FilterOperator` | 18개 연산자 ($eq, $contains, $in 등) |
+| `@StrapiQueryParam` | 컨트롤러 어노테이션 |
+| `StrapiQueryArgumentResolver` | 파라미터 자동 주입 (Servlet + Reactive) |
+| `JooqQueryBuilder` / `JooqSearchCriteria` | jOOQ 변환 |
+| `MybatisQueryBuilder` / `MybatisSearchCriteria` | MyBatis 변환 |
+| `MybatisSqlProvider` | 동적 SQL 생성 추상 클래스 |
+| `JooqExtensions` | jOOQ Record 확장 함수 |
+
+---
+
+#### B. Reactive(WebFlux) 지원 (완전 신규)
+
+구 버전은 Servlet(MVC)만 지원. 신 버전은 모든 기능의 Reactive 버전 제공.
+
+| 신규 Reactive 클래스 | 대응하는 Servlet 클래스 |
+|---------------------|----------------------|
+| `SessionLoadFilter` | `SessionLoadInterceptor` |
+| `RequireSessionFilter` | `RequireSessionInterceptor` |
+| `RequestTimingFilter` | `RequestTimingInterceptor` |
+| `SessionArgumentResolver` (reactive) | `SessionArgumentResolver` (servlet) |
+| `StrapiQueryArgumentResolver` (reactive) | `StrapiQueryArgumentResolver` (servlet) |
+| `CommonsReactiveWebAutoConfiguration` | `CommonsWebAutoConfiguration` |
+| `CommonsReactiveSecurityAutoConfiguration` | `CommonsSecurityAutoConfiguration` |
+| `ErrorResponses` (reactive) | `ErrorResponses` (servlet) |
+
+---
+
+#### C. RequestTimingInterceptor/Filter (신규)
+
+구 버전에 없던 응답 시간 측정 기능.
+
+```
+X-Response-Time: 45ms
+```
+
+---
+
+#### D. JwtHelper (신규)
+
+구 버전의 `SessionAccessTokenConverter`를 대체하는 JWT 전용 헬퍼.
+
+```kotlin
+JwtHelper.loadPublicKey()                    // RSA 공개키 로드
+JwtHelper(objectMapper).generate(session)    // JWT 토큰 생성 (테스트용)
+```
+
+---
+
+#### E. GlobalBinderAdvice (신규, Servlet 전용)
+
+```kotlin
+@InitBinder
+fun initBinder(binder: WebDataBinder) {
+    binder.initDirectFieldAccess()  // Setter 대신 필드 직접 접근
+}
+```
+
+Kotlin data class와의 호환성을 위해 추가.
+
+---
+
+#### F. BusinessExceptionWebExceptionHandler (신규, Reactive 전용)
+
+```kotlin
+// 필터에서 throw된 BusinessException을 처리하는 WebExceptionHandler
+@Order(Ordered.HIGHEST_PRECEDENCE)
+class BusinessExceptionWebExceptionHandler : WebExceptionHandler { ... }
+```
+
+`@RestControllerAdvice`는 컨트롤러 레벨 예외만 처리하므로, 필터 레벨 예외를 위해 추가.
+
+---
+
+#### G. String 확장 함수 (신규)
+
+```kotlin
+fun String.toSnakeCase(): String  // "partnerSeq" → "partner_seq"
+fun String.toCamelCase(): String  // "partner_seq" → "partnerSeq"
+```
+
+구 버전 `StringUtil.camelToSnake()` / `snakeToCamel()`의 Kotlin 관용적 대체.
+
+---
+
+#### H. Session.columns() (신규)
+
+```kotlin
+Session.columns()           // ["brand", "product", "partnerSeq", ...]
+Session.columns("delete")  // ["deleteBrand", "deleteProduct", ...]
+```
+
+DB 감사(audit) 컬럼 매핑을 위한 유틸리티. 구 버전에는 없던 기능.
+
+---
+
+#### I. NoArg 어노테이션 (신규)
+
+```kotlin
+@NoArg
+data class MyEntity(val id: Long, val name: String)
+// → kotlin-noarg 플러그인이 기본 생성자 자동 생성 (MyBatis 매핑용)
+```
+
+---
+
+### 11.6 마이그레이션 체크리스트
+
+서비스에서 `commons-util` → `commons`로 전환할 때 확인할 사항:
+
+| # | 확인 항목 | 조치 |
+|---|----------|------|
+| 1 | `ApiResponse` 반환 타입 제거 | 컨트롤러에서 데이터 직접 반환으로 변경 |
+| 2 | `ApiControllerAspect` 제거 | AOP 래핑 삭제 |
+| 3 | `ApiRequester` → `ApiClient` | 메서드 시그니처 변경 (`getList()` → `get\<List\<T\>\>()`) |
+| 4 | `import com.knet.commons.util.api.*` | `import com.knet.commons.web.client.*` 로 변경 |
+| 5 | `import com.knet.commons.util.session.*` | `import com.knet.commons.session.*` 로 변경 |
+| 6 | `import com.knet.commons.util.api.exception.*` | `import com.knet.commons.exception.*` 로 변경 |
+| 7 | `DefaultErrorCode` 참조 | `CommonWebServerErrorCode` 또는 도메인별 ErrorCode로 변경 |
+| 8 | `extends ApiWebMvcConfig` | 삭제 (AutoConfiguration 자동 적용) |
+| 9 | `extends AbstractOAuth2ClientConfig` | `@Import(CommonsClientConfig::class)` 로 변경 |
+| 10 | `SessionSearchDto` 사용 | `@StrapiQueryParam query: StrapiQuery` 로 변경 |
+| 11 | `SnakeToCamelPageableArgumentResolver` | `StrapiQueryArgumentResolver` 자동 등록 |
+| 12 | `String[]` TypeHandler | `List\<String\>` TypeHandler로 변경 |
+| 13 | `SessionSerializer/Deserializer` | 삭제 (Encryptor + ObjectMapper 직접 사용) |
+| 14 | `application.yml` 추가 | `knet.commons.web.enabled: true` 설정 |
+| 15 | Java → Kotlin | Session, Brand, SessionType 등 import 경로 변경 |
+
+---
+
+## 12. 예상 질문 & 답변 (Q&A)
+
+> 발표 시 팀원들이 궁금해할 만한 질문과 답변 정리
+
+---
+
+### Q1. 기존 commons-util을 쓰는 서비스는 당장 마이그레이션 해야 하나요?
+
+**아닙니다.** 두 라이브러리는 독립적으로 공존합니다.
+
+- `commons-util`은 그대로 유지됩니다. 특히 `batch-util`, `cert-util`, `hometax-util` 등 미이관 모듈은 계속 `commons-util`에서 사용합니다.
+- **신규 서비스**를 만들 때 `commons`를 사용하면 됩니다.
+- 기존 서비스는 리팩토링이나 Spring Boot 3 업그레이드 시점에 맞춰 점진적으로 전환하면 됩니다.
+- 단, 두 라이브러리를 **동시에 의존**하는 것은 패키지 충돌 위험이 있으므로 피하는 게 좋습니다. (예: `Session` 클래스가 양쪽에 존재)
+
+---
+
+### Q2. ApiResponse 래핑을 제거하면, 프론트엔드에서 응답 파싱 로직을 다 바꿔야 하는 거 아닌가요?
+
+**맞습니다.** 프론트엔드와 함께 변경해야 합니다.
+
+**구 버전 프론트 코드:**
+```javascript
+const res = await api.get("/users/1");
+const user = res.data;           // 한 단계 꺼내야 함
+if (!res.success) { ... }        // success 플래그 확인
+```
+
+**신 버전 프론트 코드:**
+```javascript
+const user = await api.get("/users/1");  // 바로 데이터
+// 에러 시 HTTP 상태 코드로 분기 (4xx, 5xx)
+```
+
+**전환 팁:**
+- 정상 응답: HTTP 200 + 데이터 직접 반환
+- 에러 응답: HTTP 4xx/5xx + `ErrorResponse` 형태 (`{ code, message, detail, status }`)
+- 프론트에서는 HTTP 상태 코드로 성공/실패 판단 → REST API 표준 관행과 동일
+
+---
+
+### Q3. WebClient에서 RestClient로 바꾼 이유는? WebClient가 더 최신 아닌가요?
+
+둘 다 Spring 6에서 지원하는 현역 클라이언트이지만, **용도가 다릅니다.**
+
+| 항목 | WebClient | RestClient |
+|------|-----------|------------|
+| 프로그래밍 모델 | Reactive (Mono/Flux) | 동기 (블로킹) |
+| 도입 시기 | Spring 5 (2017) | Spring 6.1 (2023) |
+| 주 사용처 | WebFlux 기반 서비스 | MVC 기반 서비스 |
+| 사용 편의성 | `.block()` 필요 (동기 환경에서) | 직관적인 동기 호출 |
+
+**바꾼 이유:**
+- 구 버전에서 WebClient를 MVC 서비스에서 사용하면서 `.block()`으로 동기 변환 → 비효율적
+- RestClient는 Spring 6.1에서 **MVC 환경을 위해 새로 만든** 동기 HTTP 클라이언트
+- RestClient도 내부적으로 WebClient와 동일한 HTTP 엔진 사용 가능 (성능 차이 없음)
+- OAuth2 인터셉터도 RestClient 네이티브 지원 (`OAuth2ClientHttpRequestInterceptor`)
+
+---
+
+### Q4. Strapi 쿼리 시스템이 뭔가요? 왜 도입했나요?
+
+**Strapi**는 오픈소스 CMS인데, 여기서는 Strapi의 **쿼리 파라미터 규격만 차용**했습니다.
+
+**도입 전 문제점:**
+- 각 서비스마다 검색 API의 파라미터 형식이 제각각
+- `SessionSearchDto` 같은 전용 DTO를 매번 만들어야 함
+- OR 조건, 중첩 필터 등 복잡한 검색이 불가능
+
+**도입 후:**
+- 모든 검색 API가 **동일한 쿼리 파라미터 규격** 사용
+- 컨트롤러에 `@StrapiQueryParam query: StrapiQuery` 하나면 필터/정렬/페이징 전부 처리
+- 프론트엔드에서 `filters[field][$operator]=value` 형태로 자유롭게 조합
+- jOOQ/MyBatis 어디든 자동 변환 (`JooqSearchCriteria`, `MybatisSearchCriteria`)
+
+**예시 — 같은 검색을 구/신으로 비교:**
+```
+# 구: 전용 DTO 필요
+GET /fax?brands=BAROBILL&sessionTypes=USER&startDate=2024-01-01&endDate=2024-12-31&sort=partner_seq,desc&page=0&size=20
+
+# 신: 표준화된 Strapi 형식
+GET /fax?filters[brand][$eq]=BAROBILL&filters[doSessionType][$eq]=USER&filters[doDt][$gte]=2024-01-01&filters[doDt][$lte]=2024-12-31&sort=doDt,desc&page=0&size=20
+```
+
+---
+
+### Q5. Servlet과 Reactive를 이중 지원하는데, 서비스에서 둘 다 설정되면 충돌 안 나나요?
+
+**충돌 나지 않습니다.** Spring Boot의 `@ConditionalOnWebApplication` 조건이 자동으로 구분합니다.
+
+```kotlin
+// Servlet 전용 — MVC 프로젝트에서만 활성화
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+class CommonsWebAutoConfiguration
+
+// Reactive 전용 — WebFlux 프로젝트에서만 활성화
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.REACTIVE)
+class CommonsReactiveWebAutoConfiguration
+```
+
+- `spring-boot-starter-web` 의존성 → Servlet 모드 → `CommonsWebAutoConfiguration`만 활성화
+- `spring-boot-starter-webflux` 의존성 → Reactive 모드 → `CommonsReactiveWebAutoConfiguration`만 활성화
+- 둘 다 있으면 Spring Boot가 **Servlet을 우선** 선택 (Spring Boot 기본 동작)
+
+`commons-web-server`의 모든 의존성이 `compileOnly`이므로 빌드 시에도 충돌 없습니다.
+
+---
+
+### Q6. `permitAll()`로 모든 요청을 허용하면, 보안은 어떻게 처리되나요?
+
+두 단계로 나눠서 이해해야 합니다:
+
+**1단계 — Spring Security (JWT 검증)**
+```
+permitAll() = 토큰이 없어도 요청 자체는 통과시킴
+```
+- 단, **JWT 토큰이 있으면** 검증은 수행합니다 (유효하지 않으면 401)
+- 토큰이 없으면 인증 없이 통과 → 이후 단계에서 세션 확인
+
+**2단계 — @RequireSession (세션 기반 인가)**
+```
+@RequireSession = 세션이 없으면 401, 브랜드/타입 불일치면 403
+```
+
+**이렇게 설계한 이유:**
+- 모든 API가 JWT를 필요로 하는 건 아닙니다 (공개 API, 헬스체크 등)
+- **마이크로서비스 간 호출**은 OAuth2 Client Credentials로 토큰을 받고, 세션은 KSESSIONID로 전달
+- 따라서 "인증은 JWT/OAuth2", "인가는 @RequireSession"으로 역할이 분리되어 있습니다
+
+---
+
+### Q7. AES 암호화 키가 코드에 하드코딩되어 있는데, 보안상 문제 없나요?
+
+**현재 상태:** `Encryptor.kt`에 키(`KNET_ENCRYPT_KEY`)와 IV(`KNET_ENCRYPT_IV`)가 하드코딩
+
+```kotlin
+private const val AES_KEY = "KNET_ENCRYPT_KEY"
+private const val AES_IV = "KNET_ENCRYPT_IV"
+```
+
+**이것이 허용되는 이유:**
+- 이 암호화는 **마이크로서비스 내부 통신 전용**입니다 (외부 노출 X)
+- KSESSIONID는 내부 서비스 간에만 주고받는 값
+- 외부 클라이언트(브라우저)에서는 JWT 토큰을 사용하고, KSESSIONID를 직접 생성하지 않음
+- 내부 네트워크(K8s 클러스터) 안에서만 유통되므로 키 유출 위험이 낮음
+
+**다만 개선이 필요한 부분:**
+- 환경변수나 Vault 등으로 키를 외부화하면 더 안전합니다
+- 구 버전(`EncryptUtil`)도 동일하게 하드코딩이므로, 이 부분은 양쪽 동일한 설계입니다
+
+---
+
+### Q8. Jackson이 `com.fasterxml.jackson`에서 `tools.jackson`으로 바뀌었는데, 호환성 문제는?
+
+**Jackson 3.x (tools.jackson)은 패키지가 완전히 다릅니다.**
+
+```java
+// 구 (Jackson 2.x)
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+// 신 (Jackson 3.x)
+import tools.jackson.databind.ObjectMapper;
+```
+
+**영향:**
+- `commons` 라이브러리 내부에서는 이미 `tools.jackson`을 사용합니다
+- `commons`를 의존하는 서비스도 **Spring Boot 3.x + Jackson 3.x** 환경이어야 합니다
+- Spring Boot 3.4+에서 Jackson 3.x가 공식 지원됩니다
+- 기존 Spring Boot 2.x 서비스에서는 `commons`를 사용할 수 없습니다 → `commons-util` 계속 사용
+
+**주의:** Jackson 2.x와 3.x는 **공존 불가**합니다. 하나의 서비스에서 양쪽을 동시에 쓸 수 없으므로, Spring Boot 3.x 업그레이드가 전제 조건입니다.
+
+---
+
+### Q9. Reactive 필터에서 BusinessExceptionWebExceptionHandler를 별도로 만든 이유가 뭔가요?
+
+**Reactive 환경에서 예외 처리 레이어가 두 곳**이기 때문입니다:
+
+```
+HTTP 요청
+  │
+  ▼
+  WebFilter (SessionLoadFilter, RequireSessionFilter)  ← 여기서 예외 발생 시?
+  │
+  ▼
+  Controller                                           ← 여기서 예외 발생 시?
+  │
+  ▼
+  @RestControllerAdvice (ReactiveGlobalExceptionHandler) ← 컨트롤러 예외만 처리
+```
+
+- `@RestControllerAdvice`는 **컨트롤러 내부**에서 발생한 예외만 잡습니다
+- `RequireSessionFilter`에서 `throw BusinessException(UNAUTHORIZED)`하면 → `@RestControllerAdvice`에 도달하지 않음
+- 따라서 필터 레벨 예외를 잡기 위해 `WebExceptionHandler`가 필요합니다
+
+**Servlet은 왜 안 만들었나?**
+- Servlet의 `HandlerInterceptor`에서 발생한 예외는 Spring MVC의 예외 처리 체인을 타서 `@RestControllerAdvice`에 도달합니다
+- 따라서 Servlet에서는 별도 핸들러가 불필요합니다
+
+---
+
+### Q10. `Session`의 필드가 전부 `var`이고 nullable인데, data class에서 `val`로 불변으로 만드는 게 낫지 않나요?
+
+**맞는 지적이지만, 의도적인 설계입니다.**
+
+`var`인 이유:
+- `SessionLoadFilter`에서 세션을 로드한 후 `session.copy(doDt = LocalDateTime.now())`로 요청 시각을 덮어씁니다
+- MyBatis 매핑 시 기본 생성자로 생성 후 setter로 값을 주입하는 패턴 (`@NoArg` + `var`)
+- Jackson 역직렬화 시에도 기본 생성자 + setter 방식이 가장 호환성이 좋습니다
+
+nullable인 이유:
+- 모든 필드가 항상 존재하지 않습니다 (예: 비회원 요청 시 `userSeq = null`)
+- 세션 추출 실패 시 Session 객체 자체가 null이 아니라 각 필드가 null
+- `@RequireSession`이 없는 API에서는 Session이 부분적으로만 채워질 수 있음
+
+**`copy()`를 쓰고 있으므로** 실질적으로 불변처럼 사용하고 있습니다. `var`이지만 컨트롤러/서비스에서 직접 필드를 수정하는 것은 권장하지 않습니다.
