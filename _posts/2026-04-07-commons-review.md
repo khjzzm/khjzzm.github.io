@@ -20,6 +20,7 @@ tags: [ kotlin, spring-boot, review ]
 - Nexus에 배포하여 각 서비스에서 의존성으로 사용
 
 ### 1.2 기술 스택
+
 | 항목 | 기술 |
 |------|------|
 | 언어 | Kotlin |
@@ -681,6 +682,7 @@ class ApiClient(
 ```
 
 #### 제공 메서드
+
 | 메서드 | 설명 |
 |--------|------|
 | `get\<T\>(path, session?)` | GET 요청 |
