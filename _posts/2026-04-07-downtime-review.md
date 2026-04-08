@@ -126,7 +126,7 @@ downtime/                          # 루트 프로젝트
 
 ### 1.4 빌드 설정 핵심 포인트
 
-- **Java 25 Toolchain**: `JavaLanguageVersion.of(25)` — 시스템에 Java 25 필수
+- **Java 25 Toolchain**: `JavaLanguageVersion.of(25)` — 모든 모듈을 Java 25 기준으로 일관 빌드
 - **버전 관리**: 각 모듈의 `package.json`에서 version 읽음 (Nx 기반 릴리즈)
 - **Nexus 배포**: `maven-publish` 플러그인으로 `nexus-hosted` 저장소에 발행
 - **Branch 전략**: `main` → `latest.release`, 그 외 → `latest.integration`
@@ -215,6 +215,7 @@ knet:
 ```
 
 - downtime-api의 application.yaml에서 `spring.config.import: classpath:application-downtime.yaml`로 가져옴
+- 별도 yaml로 분리한 이유: downtime 모듈은 다른 MSA에서도 의존하는 공유 라이브러리이므로, 기본값(`afterWaitTime: 60`)을 JAR에 포함시켜 **한 곳에서 관리**. 의존하는 MSA는 import만 하면 기본값이 적용되고, 필요 시 오버라이드 가능
 
 ### 2.5 V202602261430__init.sql - DB 스키마 (Flyway)
 
@@ -888,51 +889,194 @@ configure<JavaPluginExtension> {
 }
 ```
 
-### 4.2 downtime-api/build.gradle.kts - jOOQ 코드 생성
+### 4.2 downtime-api/build.gradle.kts - 전체 주석 분석
+
+> 파일: `downtime-api/build.gradle.kts`
 
 **jOOQ 코드 자동생성 파이프라인:**
 
 ```
-1. Testcontainers로 PostgreSQL 17 컨테이너 시작
-2. Flyway로 마이그레이션 SQL 실행 (스키마 생성)
-3. jOOQ Code Generator가 DB 스키마를 읽어 Kotlin 코드 생성
-4. 컨테이너 종료
+./gradlew build
+  → compileKotlin이 generateJooq에 의존
+  → onlyIf: SQL 변경됐나? ─ No → 건너뜀 (빠름)
+                            │ Yes
+                            ▼
+  → doFirst: Docker PostgreSQL 시작 → Flyway 마이그레이션 → jOOQ 접속 정보 설정
+  → jOOQ Generator: DB 스키마 읽어 Kotlin 코드 생성
+  → doLast: 컨테이너 종료
+  → compileKotlin: 생성된 코드 + 프로젝트 코드 함께 컴파일
 ```
 
-핵심 코드:
+**전체 소스 (주석 포함):**
+
 ```kotlin
-doFirst {
-    db = PostgreSQLContainer("postgres:17-alpine")
-        .withDatabaseName(ds.name)
-        .apply { start() }
+import nu.studer.gradle.jooq.JooqEdition
+import org.flywaydb.core.Flyway
+import org.testcontainers.postgresql.PostgreSQLContainer
 
-    // Flyway 마이그레이션 실행
-    Flyway.configure()
-        .dataSource(db.jdbcUrl, db.username, db.password)
-        .locations("filesystem:${migrationDir.absolutePath}")
-        .load()
-        .migrate()
+plugins {
+    alias(libs.plugins.kotlin.jvm)       // Kotlin JVM 플러그인 (libs.versions.toml에서 버전 관리)
+    alias(libs.plugins.kotlin.spring)    // Kotlin Spring 지원 (open class 자동 적용 등)
+    alias(libs.plugins.spring.boot)      // Spring Boot 플러그인 (bootJar, bootRun 등)
+    alias(libs.plugins.jooq)             // nu.studer.jooq 플러그인 (jOOQ 코드 생성)
+}
 
-    // jOOQ에 DB 접속 정보 전달
-    jooq.configurations[ds.name].jooqConfiguration.apply {
-        jdbc.url = db.jdbcUrl
-        jdbc.username = db.username
-        jdbc.password = db.password
+// package.json에서 version 읽기 (Nx가 관리하는 버전을 Gradle에서 사용)
+version = (groovy.json.JsonSlurper().parse(file("package.json")) as Map<*, *>)["version"] as String
+
+dependencies {
+    // ── KNET 공통 모듈 ──
+    implementation("com.knet.commons:commons-web-server:${rootProject.extra["knetVersion"]}")  // 공통 웹 서버
+    implementation(project(":downtime"))  // downtime 공유 모듈 (enum, Properties, Flyway SQL)
+
+    // ── Kotlin Coroutines ──
+    implementation(libs.kotlinx.coroutines.core)     // 코루틴 기본 (suspend, Flow 등)
+    implementation(libs.kotlinx.coroutines.reactor)   // Reactor ↔ Coroutines 브릿지
+
+    // ── Spring WebFlux (Reactive 웹) ──
+    implementation(libs.spring.boot.starter.webflux)                  // WebFlux 스타터 (Netty 서버)
+    implementation(libs.spring.boot.starter.oauth2.resource.server)   // OAuth2 Resource Server (JWT 검증)
+    implementation(libs.spring.boot.starter.data.r2dbc)               // R2DBC 스타터 (Non-blocking DB)
+    implementation(libs.spring.data.commons)                          // Spring Data 공통 (Page, Pageable)
+
+    // ── Spring Cloud ──
+    implementation(libs.spring.cloud.starter.config)  // Config Server 클라이언트
+
+    // ── Actuator (모니터링) ──
+    implementation(libs.spring.boot.starter.actuator)       // 헬스체크, 메트릭 엔드포인트
+    implementation(libs.micrometer.registry.prometheus)      // Prometheus 메트릭 수집
+
+    // ── jOOQ (Type-safe SQL) ──
+    implementation(libs.jooq)               // jOOQ 런타임 (DSLContext, Condition 등)
+    implementation(libs.jooq.kotlin)        // jOOQ Kotlin 확장
+    jooqGenerator(libs.postgresql)          // 코드 생성 시 PostgreSQL JDBC 드라이버
+    jooqGenerator(libs.jooq)               // 코드 생성 시 jOOQ 라이브러리
+    jooqGenerator(libs.jooq.meta)          // 코드 생성 시 DB 메타데이터 리더
+
+    // ── Database ──
+    runtimeOnly(libs.postgresql)            // PostgreSQL JDBC 드라이버 (Flyway가 사용)
+    runtimeOnly(libs.r2dbc.postgresql)      // PostgreSQL R2DBC 드라이버 (앱 런타임)
+
+    // ── Flyway (DB 마이그레이션) ──
+    implementation(libs.spring.boot.starter.flyway)      // 앱 시작 시 마이그레이션 자동 실행
+    runtimeOnly(libs.flyway.database.postgresql)          // Flyway PostgreSQL 지원
+
+    // ── Testing ──
+    testImplementation(libs.spring.boot.starter.test)          // Spring Boot 테스트
+    testImplementation(libs.spring.boot.starter.webflux.test)  // WebTestClient
+    testImplementation(libs.spring.security.test)              // Security 테스트 유틸
+    testImplementation(libs.kotlinx.coroutines.test)           // 코루틴 테스트
+    testImplementation(libs.mockito.kotlin)                    // Mockito Kotlin 확장
+    testImplementation(libs.spring.boot.testcontainers)        // Testcontainers 통합
+    testImplementation(libs.testcontainers)                    // Testcontainers 코어
+    testImplementation(libs.testcontainers.junit.jupiter)      // JUnit5 확장
+    testImplementation(libs.testcontainers.postgresql)         // PostgreSQL 컨테이너
+    testImplementation(libs.testcontainers.r2dbc)              // R2DBC 지원
+    testImplementation(libs.kotlin.test.junit5)                // Kotlin JUnit5
+    testRuntimeOnly(libs.junit.platform.launcher)              // JUnit Platform 실행기
+}
+
+// ════════════════════════════════════════════════════════════
+// region jOOQ Code Generation
+// ════════════════════════════════════════════════════════════
+
+// ── buildscript: Gradle 자체가 빌드 시점에 사용하는 라이브러리 ──
+// (앱 코드의 dependencies와 별개)
+buildscript {
+    repositories {
+        maven {
+            url = uri(property("nexusPublicUrl") as String)  // 사내 Nexus
+            credentials { /* NEXUS_USERNAME, NEXUS_PASSWORD */ }
+        }
+    }
+    dependencies {
+        classpath("...testcontainers...")            // 빌드 시 Docker 컨테이너 기동
+        classpath("...postgresql...")                // 빌드 시 Flyway가 JDBC로 접속
+        classpath("...flyway-core...")               // 빌드 시 마이그레이션 실행
     }
 }
-```
 
-**성능 최적화 (onlyIf):**
-```kotlin
-onlyIf {
-    // 마이그레이션 파일이 생성된 코드보다 새로울 때만 재생성
-    val migrationLastModified = migrationDir.listFiles()?.maxOfOrNull { it.lastModified() } ?: 0
-    val outputLastModified = outDir.listFiles()?.maxOfOrNull { it.lastModified() } ?: 0
-    migrationLastModified > outputLastModified
+// ── DataSource 정의: DB가 여러 개면 여기에 추가 ──
+data class JooqDataSource(
+    val name: String,          // "downtime" (태스크명, 출력 디렉토리에 사용)
+    val migrationDir: String,  // "db/migration" (Flyway SQL 경로)
+    val packageName: String    // 생성될 Kotlin 코드의 패키지명
+)
+
+val dataSources = listOf(
+    JooqDataSource("downtime", "db/migration", "com.knet.msa.downtime.api.generated.downtime"),
+)
+
+// ── jOOQ 플러그인 설정: 코드 생성기 구성 ──
+jooq {
+    version.set("3.20.10")
+    edition.set(JooqEdition.OSS)            // 오픈소스 에디션
+
+    configurations {
+        dataSources.forEach { ds ->
+            create(ds.name) {
+                generator.apply {
+                    name = "org.jooq.codegen.KotlinGenerator"  // Kotlin 코드 생성
+                    database.apply {
+                        name = "org.jooq.meta.postgres.PostgresDatabase"
+                        inputSchema = "public"
+                    }
+                    generate.apply {
+                        // 생성할 것
+                        isTables = true                    // 테이블 참조 (DOWNTIMES)
+                        isRecords = true                   // Record 클래스
+                        isPojos = true                     // POJO
+                        isPojosAsKotlinDataClasses = true  // data class로 생성
+
+                        // 생성하지 않을 것
+                        isDaos = false       // 직접 Repository 작성
+                        isRoutines = false   // 스토어드 프로시저 안 씀
+                        isSequences = false  // 시퀀스 불필요
+                    }
+                }
+            }
+        }
+    }
 }
+
+// ── 각 DataSource별 실행 로직 ──
+dataSources.forEach { ds ->
+    tasks.named<JooqGenerate>(ds.taskName()) {
+
+        // 스킵 조건: SQL이 변경되지 않았으면 재생성 안 함 (빌드 시간 절약)
+        onlyIf {
+            migrationLastModified > outputLastModified
+        }
+
+        // 실행 전: 컨테이너 기동 + Flyway + 접속 정보 설정
+        doFirst {
+            db = PostgreSQLContainer("postgres:17-alpine").apply { start() }
+            Flyway.configure().dataSource(db.jdbcUrl, ...).load().migrate()
+            jooq.configurations[ds.name].jooqConfiguration.jdbc.url = db.jdbcUrl
+            // → 이후 jOOQ Generator가 DB 스키마를 읽어 Kotlin 코드 생성
+        }
+
+        // 실행 후: 컨테이너 종료
+        doLast { db.stop() }
+    }
+}
+
+// ── 컴파일 전에 jOOQ 코드 생성이 먼저 실행되도록 순서 보장 ──
+tasks.named("compileKotlin") { dependsOn("generateJooq") }
+// endregion
 ```
 
-- 마이그레이션 SQL이 변경되지 않았으면 코드 재생성 건너뜀 → 빌드 시간 절약
+**영역별 요약:**
+
+| 영역 | 설명 |
+|------|------|
+| plugins | 4개 플러그인 (Kotlin, Spring, Boot, jOOQ) |
+| dependencies | 9개 카테고리 (KNET, Coroutines, WebFlux, Cloud, Actuator, jOOQ, DB, Flyway, Testing) |
+| buildscript | 빌드 스크립트 자체의 의존성 (앱 의존성과 별개) |
+| JooqDataSource | DataSource 정의 (DB 추가 시 여기에 추가) |
+| jooq { } | 코드 생성기 설정 (생성할 것 / 안 할 것) |
+| 태스크 설정 | onlyIf(스킵) → doFirst(컨테이너+Flyway) → doLast(종료) |
+| 컴파일 순서 | generateJooq → compileKotlin 순서 보장 |
 
 ### 4.3 downtime/build.gradle.kts - 공유 모듈 배포
 
@@ -1373,7 +1517,7 @@ downtime.delete(session)
 | 원칙 | 설명 | 적용 사례 |
 |------|------|----------|
 | 불필요한 추상화 제거 | 구현체가 하나뿐인 Interface 제거 | Service Interface+Impl → 단일 클래스 |
-| 외부 의존 최소화 | 다른 MSA 모듈에 대한 의존 제거 | TargetType에서 fax/card/message/bank 의존 제거 |
+| 외부 의존 최소화 | 다른 MSA 모듈에 대한 의존 임시 제거 (각 MSA 최신 버전 전환 후 재연결 예정) | TargetType에서 fax/card/message/bank 의존 제거 |
 | 관심사 분리 | 검증/상태전이/영속화를 각 계층에 배치 | Validator 분리, afterWaitTime을 호출측으로 위임 |
 | 타입 안전성 강화 | 컴파일 타임에 오류를 잡는 구조 | MyBatis XML → jOOQ, Java null → Kotlin non-null |
 | Non-blocking 전환 | DB I/O까지 Non-blocking으로 처리 | MVC+JDBC → WebFlux+R2DBC+Coroutines |
@@ -1475,7 +1619,7 @@ TAXINVOICE("세금계산서"),
 CASHBILL("현금영수증"),
 ```
 
-> v1 중간에 `SCRAPING`/`SUBMIT` 구분을 없애고 하나로 통합함. v2도 동일.
+> v1 중간에 `SCRAPING`/`SUBMIT` 구분을 없애고 하나로 통합함. v2도 동일. 각 MSA(세금계산서, 현금영수증 등)가 최신 버전으로 전환되면 ServiceType도 그에 맞게 재조정 예정.
 
 ### 10.4 DowntimeTargetType 변경 - 외부 MSA 의존 제거
 
@@ -1638,17 +1782,35 @@ public List<Downtime> currentDowntimes(...) {
 
 → DB에서 전체 활성 다운타임을 가져온 후, Java에서 `endDT + 60초` 필터링
 
-**v2 - afterWaitTime 로직 없음**
+**v2 - afterWaitTime을 DB 쿼리 레벨에서 처리**
 ```kotlin
+// Service: DowntimeProperties에서 afterWaitTime 주입
 fun findActive(serviceType: DowntimeServiceType, baseDt: LocalDateTime?): Flow<Downtime> =
-    downtimeRepository.findActive(serviceType.name, baseDt ?: LocalDateTime.now())
+    downtimeRepository.findActive(
+        serviceType.name,
+        baseDt ?: LocalDateTime.now(),
+        downtimeProperties.afterWaitTime.toLong()
+    )
+
+// Repository: baseDt에서 afterWaitTime을 빼서 DB 쿼리 조건에 반영
+fun findActive(serviceType: String, baseDt: LocalDateTime, afterWaitTimeSeconds: Long = 0): Flow<Downtime> {
+    // endDt + afterWaitTime >= baseDt → endDt >= baseDt - afterWaitTime (동일 조건)
+    val adjustedBaseDt = baseDt.minusSeconds(afterWaitTimeSeconds)
+    return Flux.from(
+        dsl.selectFrom(DOWNTIMES)
+            .where(DOWNTIMES.SERVICE_TYPE.eq(serviceType))
+            .and(DOWNTIMES.START_DT.le(baseDt))
+            .and(DOWNTIMES.END_DT.ge(adjustedBaseDt))    // 종료 + 60초까지 활성으로 간주
+            .and(DOWNTIMES.IS_DELETED.eq(false))
+    ).asFlow().map { mapToDowntime(it) }
+}
 ```
 
-→ DB 쿼리 결과를 그대로 반환. afterWaitTime은 **호출하는 MSA 서비스에서 직접 처리**하도록 위임
-
-**왜 바꿨나?**
-- v1: 다운타임 API가 "점검 끝났는지"까지 판단 → 이 서비스의 책임이 과도
-- v2: 다운타임 API는 순수하게 "등록된 일정"만 제공, 판단은 호출측이 함 → **관심사 분리**
+**v1 → v2 개선 포인트:**
+- v1: DB에서 전체 조회 → Java에서 필터링 (불필요한 데이터 전송)
+- v2: DB 쿼리 조건에 afterWaitTime을 반영하여 **필요한 데이터만 조회** (효율적)
+- v1: `LocalDateTime.now()`를 필터 안에서 호출 (매 레코드마다 시각이 다를 수 있음)
+- v2: `baseDt`를 한 번만 계산해서 일관된 기준 시각 사용
 
 ### 10.8 Domain 모델 변경
 
@@ -1954,7 +2116,7 @@ spring:
     config:
       enabled: false                        # 로컬에서는 비활성화
 ---
-spring.config.activate.on-profile: dev | prod   # Spring Boot 3+ 프로필 문법
+spring.config.activate.on-profile: dev | prod   # Spring Boot 3 이후 프로필 문법
 spring:
   config:
     import: configserver:http://${CONFIG_SERVER_HOST}:${CONFIG_SERVER_PORT}
@@ -1964,7 +2126,7 @@ spring:
 ```
 
 **변경 포인트:**
-- `bootstrap.yml` 제거 → Spring Boot 3에서 `spring.config.import`로 대체
+- `bootstrap.yml` 제거 → Spring Boot 3 이후 `spring.config.import`로 대체
 - `spring.profiles: cloudconfig` → `spring.config.activate.on-profile: dev | prod`
 - 커스텀 DataSource 설정 → Spring Boot 자동 설정 (`spring.r2dbc.*`)
 - JDBC → R2DBC + Flyway용 JDBC 이중 설정
