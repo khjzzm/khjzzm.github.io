@@ -19,6 +19,16 @@ tags: [ kotlin, spring-boot, review ]
 - 세션 관리, API 호출, 에러 처리, 쿼리 빌딩 등을 표준화
 - Nexus에 배포하여 각 서비스에서 의존성으로 사용
 
+**MSA에서 의존성 추가:**
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("com.knet.commons:commons:${knetVersion}")              // 핵심 (enum, Session, ErrorCode 등)
+    implementation("com.knet.commons:commons-web-server:${knetVersion}")   // 서버 웹 (세션, 보안, 에러 핸들링 등)
+    implementation("com.knet.commons:commons-web-client:${knetVersion}")   // API 클라이언트 (선택)
+}
+```
+
 ### 1.2 기술 스택
 
 | 항목 | 기술 |
@@ -52,6 +62,7 @@ commons-web-client  ──▶  commons
 - **Java 25 Toolchain**: `JavaLanguageVersion.of(25)` — 모든 모듈을 Java 25 기준으로 일관 빌드
 - **버전 관리**: 각 모듈의 `package.json`에서 version 읽음 (Nx 기반 릴리즈)
 - **Nexus 배포**: `maven-publish` 플러그인으로 `nexus-hosted` 저장소에 발행
+- **Branch 전략**: `main` → `latest.release`, 그 외 → `latest.integration`
 - **Kotlin 컴파일러 옵션**: `-Xjsr305=strict` (null 안전성 강화), `-Xannotation-default-target=param-property`
 
 ---
@@ -124,15 +135,15 @@ data class ErrorResponse(
 ```kotlin
 // 위치: session/Session.kt
 data class Session(
-    var brand: Brand?,           // 서비스 브랜드 (바로빌, 비즈포인 등)
-    var product: String?,        // 제품명
-    var partnerSeq: Int?,        // 파트너 번호
-    var memberSeq: Int?,         // 회원 번호
-    var userSeq: Int?,           // 사용자 번호
-    var doSessionType: SessionType?,  // 세션 타입 (SYSTEM, MANAGER 등)
-    var doSessionSeq: Int?,      // 세션 주체 번호
-    var doDt: LocalDateTime?,    // 요청 일시
-    var doIp: String?            // 요청 IP
+    var brand: Brand? = null,           // 서비스 브랜드 (바로빌, 비즈포인 등)
+    var product: String? = null,        // 제품명
+    var partnerSeq: Int? = null,        // 파트너 번호
+    var memberSeq: Int? = null,         // 회원 번호
+    var userSeq: Int? = null,           // 사용자 번호
+    var doSessionType: SessionType? = null,  // 세션 타입 (SYSTEM, MANAGER 등)
+    var doSessionSeq: Int? = null,      // 세션 주체 번호
+    var doDt: LocalDateTime? = null,    // 요청 일시
+    var doIp: String? = null            // 요청 IP
 )
 ```
 
@@ -189,6 +200,8 @@ object Encryptor {
 2. AES/CBC/PKCS5Padding 알고리즘으로 암호화
 3. Base64 인코딩
 
+**AES 키가 코드에 하드코딩된 이유:** 모든 MSA가 **동일한 키**를 써야 세션 암복호화가 호환된다. 서비스 A가 암호화한 세션을 서비스 B가 복호화하려면 같은 키여야 하므로, 환경변수로 분리하지 않고 commons 라이브러리에 고정한 것이다.
+
 #### String 확장 함수
 ```kotlin
 // 위치: util/StringExtensions.kt
@@ -231,6 +244,51 @@ annotation class NoArg
 ```
 - `kotlin-noarg` 컴파일러 플러그인과 함께 사용
 - 이 어노테이션이 붙은 data class에 기본 생성자를 자동 생성 (MyBatis 매핑 필요)
+
+**MSA 프로젝트 build.gradle.kts에 필요한 설정:**
+```kotlin
+plugins {
+    kotlin("plugin.noarg") version "..."  // kotlin-noarg 플러그인 추가
+}
+
+noArg {
+    annotation("com.knet.commons.kotlin.NoArg")  // 이 어노테이션이 붙은 클래스에 기본 생성자 생성
+}
+```
+> `@NoArg`만 붙이고 이 플러그인 설정을 안 하면 MyBatis 매핑 시 기본 생성자가 없다는 에러 발생
+
+#### TypeHandler 등록 방법 (3가지)
+
+MyBatis를 쓰는 MSA에서 commons의 TypeHandler를 사용하려면 아래 중 하나로 등록:
+
+**방법 1: mybatis-config.xml**
+```xml
+<configuration>
+    <typeHandlers>
+        <typeHandler handler="com.knet.commons.mybatis.typehandler.UuidTypeHandler"/>
+        <typeHandler handler="com.knet.commons.mybatis.typehandler.StringListArrayTypeHandler"/>
+    </typeHandlers>
+</configuration>
+```
+
+**방법 2: application.yaml (패키지 스캔)**
+```yaml
+mybatis:
+  type-handlers-package: com.knet.commons.mybatis.typehandler
+```
+
+**방법 3: SqlSessionFactory Java Config**
+```kotlin
+@Bean
+fun sqlSessionFactory(dataSource: DataSource): SqlSessionFactory {
+    val factory = SqlSessionFactoryBean()
+    factory.setDataSource(dataSource)
+    factory.setTypeHandlersPackage("com.knet.commons.mybatis.typehandler")
+    return factory.getObject()!!
+}
+```
+
+> **참고:** jOOQ를 쓰는 프로젝트(downtime-api 등)에서는 TypeHandler 세팅이 필요 없다. jOOQ는 빌드 시 DB 스키마에서 코드를 생성하므로 타입 매핑을 이미 알고 있다.
 
 ---
 
@@ -461,6 +519,7 @@ GET /items?fields=name,status,doDt
 | `$eq` | 같음 | `column = value` |
 | `$eqi` | 같음 (대소문자 무시) | `LOWER(column) = LOWER(value)` |
 | `$ne` | 같지 않음 | `column != value` |
+| `$nei` | 같지 않음 (대소문자 무시) | `LOWER(column) != LOWER(value)` |
 | `$lt` | 미만 | `column < value` |
 | `$lte` | 이하 | `column <= value` |
 | `$gt` | 초과 | `column > value` |
@@ -470,8 +529,11 @@ GET /items?fields=name,status,doDt
 | `$contains` | 포함 (LIKE) | `column LIKE '%value%'` |
 | `$containsi` | 포함 (대소문자 무시) | `LOWER(column) LIKE LOWER('%value%')` |
 | `$notContains` | 미포함 | `column NOT LIKE '%value%'` |
+| `$notContainsi` | 미포함 (대소문자 무시) | `LOWER(column) NOT LIKE LOWER('%value%')` |
 | `$startsWith` | 시작 | `column LIKE 'value%'` |
+| `$startsWithi` | 시작 (대소문자 무시) | `LOWER(column) LIKE LOWER('value%')` |
 | `$endsWith` | 끝남 | `column LIKE '%value'` |
+| `$endsWithi` | 끝남 (대소문자 무시) | `LOWER(column) LIKE LOWER('%value')` |
 | `$null` | NULL | `column IS NULL` |
 | `$notNull` | NOT NULL | `column IS NOT NULL` |
 | `$between` | 범위 | `column BETWEEN v0 AND v1` |
@@ -530,14 +592,14 @@ sealed class FilterNode {
 
 ---
 
-### 3.4 jOOQ / MyBatis 쿼리 빌더
+### 3.4 쿼리 빌더 (jOOQ / MyBatis 공통 구조)
 
-`JooqQueryBuilder`와 `MybatisQueryBuilder`는 **하는 일은 동일**하고 **출력 형식만 다르다.** 둘 다 같은 `FilterNode` 트리를 받아서 WHERE 절로 변환하며, jOOQ를 쓰느냐 MyBatis를 쓰느냐에 따라 출력 포맷만 달라진다.
+`JooqQueryBuilder`와 `MybatisQueryBuilder`는 **하는 일은 동일**하고 **출력 형식만 다르다.** 둘 다 같은 `FilterNode` 트리를 받아서 WHERE 절로 변환하며, jOOQ를 쓰느냐 MyBatis를 쓰느냐에 따라 출력 포맷만 달라진다. 3.4는 jOOQ 쪽, 3.5는 MyBatis 쪽 상세 설명.
 
 ```
 FilterNode (공통 입력)
-    ├──► JooqQueryBuilder    → jOOQ Condition 객체 (타입 안전, 컴파일 타임 검증)
-    └──► MybatisQueryBuilder → SQL 문자열          (plain text, 런타임 문자열)
+    ├──► JooqQueryBuilder    → jOOQ Condition 객체 (타입 안전, 컴파일 타임 검증) → 3.4
+    └──► MybatisQueryBuilder → SQL 문자열          (plain text, 런타임 문자열)   → 3.5
 ```
 
 #### JooqQueryBuilder
@@ -553,8 +615,31 @@ val sortFields = JooqQueryBuilder.buildSortFields(query.sort)
 - LIKE 연산자에 와일드카드 자동 추가
 
 #### JooqSearchCriteria
+
+**도메인 클래스에 FIELD_MAP / FIELD_EXPANSIONS 작성 방법:**
 ```kotlin
-// 사용 예시 (도메인 서비스에서)
+class Downtime(...) {
+    companion object {
+        // 리플렉션으로 생성자 파라미터명 → jOOQ 컬럼 자동 매핑 (애플리케이션 구동 시 1회)
+        val FIELD_MAP: Map<String, Field<*>> = Downtime::class.primaryConstructor?.parameters
+            ?.mapNotNull { param ->
+                param.name?.let { name -> DOWNTIMES.field(name.toSnakeCase())?.let { name to it } }
+            }
+            ?.toMap() ?: emptyMap()
+        // 결과: { "serviceType" → DOWNTIMES.SERVICE_TYPE, "startDt" → DOWNTIMES.START_DT, ... }
+        // session, deleteSession은 DB에 "session" 컬럼이 없으므로 자동 제외됨 → FIELD_EXPANSIONS에서 보완
+
+        // 가상 필드 확장: "session" 요청 시 9개 컬럼으로 확장
+        val FIELD_EXPANSIONS: Map<String, List<Field<*>>> = mapOf(
+            "session" to Session.columns().mapNotNull { DOWNTIMES.field(it.toSnakeCase()) },
+            "deleteSession" to Session.columns("delete").mapNotNull { DOWNTIMES.field(it.toSnakeCase()) }
+        )
+    }
+}
+```
+
+**사용 예시 (도메인 서비스에서):**
+```kotlin
 val criteria = JooqSearchCriteria.from(
     query = strapiQuery,
     fieldMap = DomainClass.FIELD_MAP,          // 필드명 → jOOQ Field 매핑
@@ -579,7 +664,7 @@ record.getOrDefault(field, default)  // 필드 없으면 기본값
 
 ---
 
-### 3.5 MyBatis 쿼리 빌더
+### 3.5 쿼리 빌더 — MyBatis 상세
 
 #### MybatisQueryBuilder
 ```kotlin
@@ -908,6 +993,7 @@ class ApiClient(
 ```
 
 #### 제공 메서드
+
 | 메서드 | 설명 |
 |--------|------|
 | `get\<T\>(path, session?)` | GET 요청 |
@@ -958,6 +1044,15 @@ class UserService(private val userApiClient: ApiClient) {
 
 ### 4.2 CommonsClientConfig
 
+> **주의:** commons-web-server는 AutoConfiguration으로 자동 등록되지만, **commons-web-client는 수동 `@Import`가 필수**다. `CommonsClientConfig`는 `@AutoConfiguration`이 아닌 일반 클래스이므로 자동 등록되지 않는다.
+
+```kotlin
+// MSA 프로젝트에서 사용 시 반드시 @Import 필요
+@Configuration
+@Import(CommonsClientConfig::class)
+class MyApiClientConfig { ... }
+```
+
 ```kotlin
 @EnableConfigurationProperties(ApiClientProperties::class)
 class CommonsClientConfig {
@@ -972,6 +1067,23 @@ api:
   client:
     connect-timeout: 5s    # 기본값 5초
     read-timeout: 30s      # 기본값 30초
+```
+
+**OAuth2 Client Credentials 설정 (필수):**
+```yaml
+# ApiClient가 다른 MSA를 호출할 때 자동으로 OAuth2 토큰을 획득하기 위한 설정
+spring:
+  security:
+    oauth2:
+      client:
+        provider:
+          knet:
+            token-uri: http://auth-server/oauth/token
+        registration:
+          knet:                              # ← ApiClient의 clientRegistrationId와 일치해야 함
+            client-id: my-service
+            client-secret: my-secret
+            authorization-grant-type: client_credentials
 ```
 
 ### 4.3 에러 처리
@@ -1238,14 +1350,14 @@ enum class FaxErrorCode(
 | 항목 | 구 버전 (commons-util) | 신 버전 (commons) |
 |------|----------------------|------------------|
 | **언어** | Java | Kotlin |
-| **Spring Boot** | 2.3.0 (Hoxton) | 3.x (Spring Boot 3) |
+| **Spring Boot** | 2.3.0 (Hoxton) | 4.0.3 |
 | **JDK** | Java 8~11 | Java 25 |
 | **모듈 수** | 16개 (java 15 + node 1) | 3개 (commons, web-server, web-client) |
-| **HTTP 클라이언트** | WebClient (Reactive) | RestClient (동기, Spring 6.1+) |
+| **HTTP 클라이언트** | WebClient (Reactive) | RestClient (동기) |
 | **API 응답 형식** | ApiResponse 래핑 구조 | 직접 반환 (래핑 제거) |
 | **설정 방식** | 수동 @Configuration | AutoConfiguration 자동 등록 |
 | **웹 스택** | Servlet(MVC)만 지원 | Servlet + Reactive 이중 지원 |
-| **OAuth2** | Spring Security OAuth2 (deprecated) | Spring Security 6 OAuth2 Resource Server |
+| **OAuth2** | Spring Security OAuth2 (deprecated) | Spring Security OAuth2 Resource Server |
 | **Jackson** | com.fasterxml.jackson | tools.jackson (Jackson 3.x) |
 | **빌드** | Gradle (Groovy DSL) | Gradle (Kotlin DSL) + Nx |
 
@@ -1787,7 +1899,7 @@ JwtHelper                            // JWT 키 로드/생성
 
 | 항목 | 구 | 신 |
 |------|---|---|
-| 인증 방식 | Spring Security OAuth2 (deprecated) | Spring Security 6 JWT Resource Server |
+| 인증 방식 | Spring Security OAuth2 (deprecated) | Spring Security JWT Resource Server |
 | 토큰 형식 | OAuth2 Access Token | JWT (RS256 서명) |
 | 세션 전달 | `SessionAccessTokenConverter` | JWT claim `session` |
 | 설정 방식 | 상속 기반 (`extends AbstractOAuth2ClientConfig`) | 프로퍼티 기반 (`knet.commons.security.enabled=true`) |
@@ -1889,7 +2001,7 @@ class UuidTypeHandler : BaseTypeHandler<UUID>() { ... }
 |------------|------|
 | `StrapiQueryParser` | HTTP 파라미터 → StrapiQuery 파싱 |
 | `StrapiQuery` / `FilterNode` | 중간 표현 (필터 트리) |
-| `FilterOperator` | 18개 연산자 ($eq, $contains, $in 등) |
+| `FilterOperator` | 21개 연산자 ($eq, $nei, $contains, $containsi, $in 등) |
 | `@StrapiQueryParam` | 컨트롤러 어노테이션 |
 | `StrapiQueryArgumentResolver` | 파라미터 자동 주입 (Servlet + Reactive) |
 | `JooqQueryBuilder` / `JooqSearchCriteria` | jOOQ 변환 |

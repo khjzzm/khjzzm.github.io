@@ -15,16 +15,16 @@ tags: [ kotlin, spring-boot, webflux, jooq, review ]
 ## 목차
 
 1. [프로젝트 개요](#1-프로젝트-개요)
-2. [downtime 모듈 (공유 라이브러리)](#2-downtime-모듈-공유-라이브러리)
-3. [downtime-api 모듈 (REST API 서버)](#3-downtime-api-모듈-rest-api-서버)
-4. [빌드 시스템](#4-빌드-시스템)
-5. [설정 파일 분석](#5-설정-파일-분석)
-6. [테스트 코드 분석](#6-테스트-코드-분석)
-7. [요청 흐름 따라가기](#7-요청-흐름-따라가기)
-8. [핵심 패턴 & 기법 정리](#8-핵심-패턴--기법-정리)
-9. [핵심 설계 원칙 요약](#9-핵심-설계-원칙-요약)
-10. [v1 vs v2 변경점 비교](#10-v1-vs-v2-변경점-비교)
-11. [Kotlin 핵심 문법 입문](#11-kotlin-핵심-문법-입문)
+2. [Kotlin 핵심 문법 입문](#2-kotlin-핵심-문법-입문)
+3. [요청 흐름 따라가기](#3-요청-흐름-따라가기)
+4. [downtime 모듈 (공유 라이브러리)](#4-downtime-모듈-공유-라이브러리)
+5. [downtime-api 모듈 (REST API 서버)](#5-downtime-api-모듈-rest-api-서버)
+6. [빌드 시스템](#6-빌드-시스템)
+7. [설정 파일 분석](#7-설정-파일-분석)
+8. [테스트 코드 분석](#8-테스트-코드-분석)
+9. [핵심 패턴 & 기법 정리](#9-핵심-패턴--기법-정리)
+10. [핵심 설계 원칙 요약](#10-핵심-설계-원칙-요약)
+11. [v1 vs v2 변경점 비교](#11-v1-vs-v2-변경점-비교)
 12. [예상 질문 & 답변 (Q&A)](#12-예상-질문--답변-qa)
 13. [향후 적용 계획](#13-향후-적용-계획)
 14. [전체 정리](#14-전체-정리)
@@ -129,15 +129,317 @@ downtime/                          # 루트 프로젝트
 - **Java 25 Toolchain**: `JavaLanguageVersion.of(25)` — 모든 모듈을 Java 25 기준으로 일관 빌드
 - **버전 관리**: 각 모듈의 `package.json`에서 version 읽음 (Nx 기반 릴리즈)
 - **Nexus 배포**: `maven-publish` 플러그인으로 `nexus-hosted` 저장소에 발행
-- **Branch 전략**: `main` → `latest.release`, 그 외 → `latest.integration`
 - **Kotlin 컴파일러 옵션**: `-Xjsr305=strict` (null 안전성 강화), `-Xannotation-default-target=param-property`
 - **jOOQ 코드 생성**: 빌드 시 Testcontainers + Flyway + jOOQ Generator로 타입 안전 코드 자동 생성
 
+### 1.5 사전 요구사항 (로컬 개발 환경)
+
+| 항목 | 필요 이유 | 설정 방법 |
+|------|-----------|-----------|
+| **Docker** | jOOQ 코드 생성 + 테스트 모두 Testcontainers 사용. Docker 없으면 **빌드 자체가 실패** | Docker Desktop 또는 Rancher Desktop 설치 후 실행 |
+| **Java 25** | Gradle Toolchain이 Java 25을 요구 | JAVA_HOME에 Java 25 설정 |
+| **Nexus 인증** | 사내 Maven 레포에서 의존성 다운로드 | `~/.gradle/gradle.properties`에 `NEXUS_USERNAME=xxx`, `NEXUS_PASSWORD=xxx` 추가 |
+| **PostgreSQL** | `bootRun`으로 로컬 실행 시 필요 (빌드/테스트는 Testcontainers로 대체) | PostgreSQL 설치 후 `downtime` DB 생성 |
+| **Node.js** | Nx 버전 관리 사용 시 | `npm install` 실행 (빌드만 할 때는 불필요) |
+
+**처음 클론 후 빌드:**
+```bash
+# 1. Nexus 인증 설정 (최초 1회)
+echo "NEXUS_USERNAME=xxx" >> ~/.gradle/gradle.properties
+echo "NEXUS_PASSWORD=xxx" >> ~/.gradle/gradle.properties
+
+# 2. Docker 실행 확인
+docker info
+
+# 3. 빌드 (jOOQ 코드 자동 생성 + 컴파일 + 테스트)
+./gradlew build
+
+# 4. jOOQ 코드가 IDE에서 빨간색으로 뜨면
+#    → IntelliJ에서 Gradle 동기화 (Reload Gradle Project)
+```
+
 ---
 
-## 2. downtime 모듈 (공유 라이브러리)
+## 2. Kotlin 핵심 문법 입문
 
-### 2.1 DowntimeServiceType.kt - 서비스 유형 enum
+> Java를 아는 팀원이 이 프로젝트 코드를 읽기 위해 알아야 할 Kotlin 문법만 정리.
+
+### 2.1 Null Safety - 컴파일 타임 null 체크
+
+```kotlin
+// Non-null: 절대 null이 될 수 없음 (Java에는 없는 개념)
+val serviceType: DowntimeServiceType    // null 넣으면 컴파일 에러
+
+// Nullable: null 허용을 명시적으로 선언
+val memo: String?                       // null 가능
+val baseDt: LocalDateTime? = null       // 기본값으로 null 지정
+
+// Safe call (?.) - null이면 평가 중단, null 반환
+downtime.replacementTargetType?.name    // Java: downtime.getReplacementTargetType() != null ? ... : null
+
+// Elvis (?:) - null이면 대체값 사용
+session ?: defaultSession()             // Java: session != null ? session : defaultSession()
+```
+
+**Java와 비교:**
+```java
+// Java - 런타임에 NPE 발생 가능
+String name = downtime.getReplacementTargetType().name();  // NPE 위험!
+
+// Java - 방어 코드 필요
+if (downtime.getReplacementTargetType() != null) {
+    String name = downtime.getReplacementTargetType().name();
+}
+```
+
+```kotlin
+// Kotlin - 컴파일러가 null 체크를 강제
+val name = downtime.replacementTargetType?.name     // null-safe, NPE 불가능
+```
+
+이 프로젝트에서 **nullable이 쓰인 곳:** DTO의 `replacementTargetType?`, `memo?`, Controller의 `Session?`, `baseDt?`, Domain의 `downtimeSeq?`, `deleteSession?`
+
+### 2.2 val / var - 불변과 가변
+
+```kotlin
+val name = "hello"      // final String name = "hello";  (불변, 재할당 불가)
+var count = 0           // int count = 0;                 (가변, 재할당 가능)
+count = 1               // OK
+name = "world"          // 컴파일 에러!
+```
+
+이 프로젝트에서의 규칙:
+- **DTO**: `val`만 사용 → 생성 후 변경 불가 (안전)
+- **Domain**: `var` 사용 → insert 후 `downtimeSeq` 할당, delete 시 `isDeleted` 변경 필요
+
+### 2.3 data class - Java의 Lombok 대체
+
+```java
+// Java + Lombok: 여전히 annotation processor 필요
+@Getter @Setter @EqualsAndHashCode @ToString @AllArgsConstructor
+public class DowntimeRegisterDto {
+    private DowntimeServiceType serviceType;
+    private DowntimeTargetType targetType;
+    private LocalDateTime startDT;
+    private LocalDateTime endDT;
+    private DowntimeTargetType replacementTargetType;
+    private String memo;
+}
+```
+
+```kotlin
+// Kotlin: 한 줄로 동일한 기능 (getter/setter/equals/hashCode/toString/copy 자동 생성)
+data class DowntimeInsertDto(
+    val serviceType: DowntimeServiceType,
+    val targetType: DowntimeTargetType,
+    val startDt: LocalDateTime,
+    val endDt: LocalDateTime,
+    val replacementTargetType: DowntimeTargetType? = null,  // 기본값 지정 가능
+    val memo: String? = null
+)
+```
+
+### 2.4 suspend fun / Flow - 비동기를 동기처럼
+
+```java
+// Java - CompletableFuture로 비동기 처리 (콜백 지옥 가능)
+CompletableFuture<Downtime> future = repository.findBySeq(seq);
+future.thenApply(downtime -> {
+    downtime.delete(session);
+    return repository.softDelete(downtime);
+}).thenApply(result -> ...);
+```
+
+```kotlin
+// Kotlin Coroutines - 비동기인데 동기처럼 읽힌다
+suspend fun delete(downtimeSeq: Int, session: Session): Downtime {
+    val downtime = downtimeRepository.findBySeqForUpdate(downtimeSeq)  // 비동기 대기 (자동)
+    downtime.delete(session)                                            // 일반 코드
+    downtimeRepository.softDelete(downtime)                             // 비동기 대기 (자동)
+    return downtime
+}
+```
+
+| 개념 | 역할 | Java 대응 |
+|------|------|-----------|
+| `suspend fun` | 일시 중단 가능한 함수 (단건) | `CompletableFuture<T>` / `Mono<T>` |
+| `Flow<T>` | 여러 값을 비동기로 내보내는 스트림 (다건) | `Stream<T>` / `Flux<T>` |
+| `awaitSingleOrNull()` | Mono → suspend 변환 | `.get()` / `.block()` |
+| `.asFlow()` | Flux → Flow 변환 | - |
+
+### 2.5 let, apply - 스코프 함수
+
+이 프로젝트에서 자주 나오는 두 가지:
+
+```kotlin
+// let: null이 아닐 때만 블록 실행 (it = 해당 값)
+record.getOrNull(DOWNTIMES.REPLACEMENT_TARGET_TYPE)
+    ?.let { DowntimeTargetType.valueOf(it) }
+// Java: String val = record.get(...); return val != null ? DowntimeTargetType.valueOf(val) : null;
+
+// apply: 객체 설정 후 자신을 반환
+PostgreSQLContainer("postgres:17-alpine")
+    .withDatabaseName("downtime")
+    .withUsername("postgres")
+    .apply { start() }              // start() 호출 후 컨테이너 객체 반환
+```
+
+### 2.6 when - Java switch의 강화판
+
+```kotlin
+// 이 프로젝트에서 직접 쓰이진 않지만, 호출하는 MSA에서 쓸 패턴
+when (downtime.targetType) {
+    CARD_BC      -> handleBC()
+    CARD_KB      -> handleKB()
+    CARD_SHINHAN -> handleShinhan()
+    else         -> handleDefault()
+}
+```
+
+- `break` 불필요 (자동)
+- 표현식으로 사용 가능 (`val result = when (x) { ... }`)
+- enum의 모든 케이스를 처리했는지 컴파일러가 검증 (`else` 없으면 경고)
+
+---
+
+## 3. 요청 흐름 따라가기 (시나리오별)
+
+### 시나리오 1: "KB은행 점검 다운타임 등록"
+
+**요청:**
+```http
+POST /api/downtimes
+Authorization: Bearer eyJ...
+Content-Type: application/json
+
+{
+  "serviceType": "BANK",
+  "targetType": "BANK_KB",
+  "startDt": "2026-04-07T23:00:00",
+  "endDt": "2026-04-08T05:00:00",
+  "replacementTargetType": "BANK_SHINHAN",
+  "memo": "KB은행 야간 정기점검"
+}
+```
+
+**코드 흐름:**
+
+```
+1. DowntimeController.insert()
+   ├── @RequestBody로 JSON → DowntimeInsertDto 변환
+   ├── JWT에서 Session 추출 (또는 defaultSession)
+   └── downtimeService.insert(dto, session) 호출
+
+2. DowntimeService.insert()
+   ├── Downtime.from(dto, session) → Downtime 도메인 객체 생성
+   │   └── downtimeSeq = null, isDeleted = false
+   │
+   ├── downtimeValidator.validateForInsert(downtime)
+   │   ├── startDt(23:00) < endDt(05:00 다음날) → OK
+   │   ├── startDt ≠ endDt → OK
+   │   ├── BANK_KB.serviceType == BANK → OK
+   │   ├── BANK_SHINHAN.serviceType == BANK → OK
+   │   └── BANK_KB ≠ BANK_SHINHAN → OK
+   │
+   └── downtimeRepository.insert(downtime)
+       ├── INSERT INTO downtimes (...) VALUES (...) RETURNING downtime_seq
+       └── downtime.downtimeSeq = 42 (DB에서 생성된 PK)
+
+3. ResponseEntity.status(201).body(downtime) 반환
+```
+
+**응답:**
+```json
+{
+  "downtimeSeq": 42,
+  "serviceType": "BANK",
+  "targetType": "BANK_KB",
+  "startDt": "2026-04-07T23:00:00",
+  "endDt": "2026-04-08T05:00:00",
+  "replacementTargetType": "BANK_SHINHAN",
+  "memo": "KB은행 야간 정기점검",
+  "isDeleted": false,
+  "session": { "brand": "BAROBILL", "doSessionType": "USER", ... },
+  "deleteSession": null
+}
+```
+
+### 시나리오 2: "문자 서비스가 현재 다운타임 확인"
+
+**요청:**
+```http
+GET /api/downtimes/active?serviceType=MESSAGE
+```
+
+**코드 흐름:**
+
+```
+1. DowntimeController.findActive()
+   ├── serviceType = MESSAGE
+   └── baseDt = null → LocalDateTime.now() 사용
+
+2. DowntimeService.findActive()
+   └── downtimeRepository.findActive("MESSAGE", 2026-04-07T14:30:00)
+
+3. DowntimeRepository.findActive()
+   └── SELECT * FROM downtimes
+       WHERE service_type = 'MESSAGE'
+         AND start_dt <= '2026-04-07T14:30:00'
+         AND end_dt >= '2026-04-07T14:30:00'
+         AND is_deleted = false
+       ORDER BY start_dt
+
+4. Flow<Downtime> 반환 → WebFlux가 JSON Array로 직렬화
+```
+
+**응답 (활성 다운타임이 있는 경우):**
+```json
+[
+  {
+    "downtimeSeq": 35,
+    "serviceType": "MESSAGE",
+    "targetType": "MESSAGE_LG",
+    "startDt": "2026-04-07T14:00:00",
+    "endDt": "2026-04-07T16:00:00",
+    "replacementTargetType": "MESSAGE_SEJONG",
+    ...
+  }
+]
+```
+
+→ 문자 서비스는 이 응답을 보고 LG 대신 세종으로 우회 발송
+
+### 시나리오 3: "등록 시 검증 실패 - 타겟 불일치"
+
+**요청:**
+```json
+{
+  "serviceType": "FAX",
+  "targetType": "BANK_KB",    ← FAX인데 BANK 타겟!
+  "startDt": "2026-04-07T23:00:00",
+  "endDt": "2026-04-08T05:00:00"
+}
+```
+
+```
+1. DowntimeValidator.validateForInsert()
+   └── BANK_KB.serviceType(BANK) != FAX → INVALID_TARGET_TYPE 예외!
+
+2. BusinessException(DowntimeErrorCode.INVALID_TARGET_TYPE)
+   └── 공통 에러 핸들러가 처리
+
+3. 응답: 400 Bad Request
+   {
+     "code": "INVALID_TARGET_TYPE",
+     "message": "대상 타겟이 서비스 타입과 일치하지 않음."
+   }
+```
+
+---
+
+## 4. downtime 모듈 (공유 라이브러리)
+
+### 4.1 DowntimeServiceType.kt - 서비스 유형 enum
 
 > 파일: `downtime/src/main/kotlin/.../enums/DowntimeServiceType.kt`
 
@@ -158,7 +460,7 @@ enum class DowntimeServiceType(val text: String) {
 - `text` 프로퍼티로 한글명을 갖고 있음 (UI 표시용)
 - 이 enum 값이 DB의 `service_type` 컬럼에 문자열(`"FAX"`, `"BANK"` 등)로 저장됨
 
-### 2.2 DowntimeTargetType.kt - 연동 대상 enum
+### 4.2 DowntimeTargetType.kt - 연동 대상 enum
 
 > 파일: `downtime/src/main/kotlin/.../enums/DowntimeTargetType.kt`
 
@@ -188,7 +490,7 @@ enum class DowntimeTargetType(val serviceType: DowntimeServiceType) {
 
 **포인트:** enum 생성자에 `serviceType`을 넣은 것이 핵심 설계. 이걸로 "이 타겟이 이 서비스에 맞는지" 검증이 코드 한 줄로 가능해짐.
 
-### 2.3 DowntimeProperties.kt - 설정 클래스
+### 4.3 DowntimeProperties.kt - 설정 클래스
 
 > 파일: `downtime/src/main/kotlin/.../config/properties/DowntimeProperties.kt`
 
@@ -204,7 +506,7 @@ data class DowntimeProperties(
 - 기본값 60초 (application-downtime.yaml에 정의)
 - `afterWaitTime` = 다운타임이 끝나도 바로 전환하지 않고 60초 더 대기 (안전 마진)
 
-### 2.4 application-downtime.yaml - 기본 설정
+### 4.4 application-downtime.yaml - 기본 설정
 
 > 파일: `downtime/src/main/resources/application-downtime.yaml`
 
@@ -217,7 +519,7 @@ knet:
 - downtime-api의 application.yaml에서 `spring.config.import: classpath:application-downtime.yaml`로 가져옴
 - 별도 yaml로 분리한 이유: downtime 모듈은 다른 MSA에서도 의존하는 공유 라이브러리이므로, 기본값(`afterWaitTime: 60`)을 JAR에 포함시켜 **한 곳에서 관리**. 의존하는 MSA는 import만 하면 기본값이 적용되고, 필요 시 오버라이드 가능
 
-### 2.5 V202602261430__init.sql - DB 스키마 (Flyway)
+### 4.5 V202602261430__init.sql - DB 스키마 (Flyway)
 
 > 파일: `downtime/src/main/resources/db/migration/V202602261430__init.sql`
 
@@ -266,11 +568,26 @@ CREATE TABLE "downtimes" (
 - 세션 정보가 등록/삭제 각각 **9개 컬럼**씩 총 18개 → 누가 언제 등록/삭제했는지 감사 추적
 - `is_deleted` = Soft Delete용 플래그
 
+**새 마이그레이션 추가 절차:**
+```
+1. downtime/src/main/resources/db/migration/ 에 SQL 파일 추가
+   예: V202604091000__add_column.sql
+   (주의: downtime 모듈에 넣어야 함. downtime-api가 아님)
+
+2. ./gradlew generateJooq 실행
+   → Testcontainers로 DB 기동 → Flyway 마이그레이션 → jOOQ 코드 재생성
+
+3. IntelliJ에서 Gradle 동기화 (Reload Gradle Project)
+   → 생성된 코드(DOWNTIMES.NEW_COLUMN 등)가 IDE에 인식됨
+
+4. Repository 코드에서 새 컬럼 사용
+```
+
 ---
 
-## 3. downtime-api 모듈 (REST API 서버)
+## 5. downtime-api 모듈 (REST API 서버)
 
-### 3.1 DowntimeApiApplication.kt - 진입점
+### 5.1 DowntimeApiApplication.kt - 진입점
 
 > 파일: `downtime-api/src/main/kotlin/.../api/DowntimeApiApplication.kt`
 
@@ -291,7 +608,7 @@ fun main(args: Array<String>) {
 - `@EnableConfigurationProperties(DowntimeProperties::class)`: **다른 모듈**(downtime)의 Properties를 명시적으로 활성화
   - downtime 모듈은 별도의 `@SpringBootApplication`이 없으므로, 여기서 명시적으로 등록해야 함
 
-### 3.2 JooqR2dbcConfig.kt - jOOQ 설정
+### 5.2 JooqR2dbcConfig.kt - jOOQ 설정
 
 > 파일: `downtime-api/src/main/kotlin/.../api/config/JooqR2dbcConfig.kt`
 
@@ -312,7 +629,7 @@ class JooqR2dbcConfig {
 - `DSLContext`가 Repository에 주입되어 타입 안전 쿼리 작성에 사용됨
 - **핵심**: jOOQ는 원래 JDBC용이지만, R2DBC `ConnectionFactory`를 넘겨서 reactive로 동작
 
-### 3.3 DowntimeInsertDto.kt - 등록 요청 DTO
+### 5.3 DowntimeInsertDto.kt - 등록 요청 DTO
 
 > 파일: `downtime-api/src/main/kotlin/.../api/dto/DowntimeInsertDto.kt`
 
@@ -333,7 +650,7 @@ data class DowntimeInsertDto(
 - `? = null` → Kotlin nullable + 기본값. JSON에서 해당 필드를 안 보내면 null로 처리
 - DTO는 클라이언트 요청 데이터만 담고, 세션/삭제 정보는 포함하지 않음 (관심사 분리)
 
-### 3.4 Downtime.kt - 도메인 모델 (핵심!)
+### 5.4 Downtime.kt - 도메인 모델 (핵심!)
 
 > 파일: `downtime-api/src/main/kotlin/.../api/domain/Downtime.kt`
 
@@ -438,7 +755,7 @@ fun from(dto: DowntimeInsertDto, session: Session): Downtime {
 - DTO + Session → 도메인 객체 변환
 - `downtimeSeq`는 null (DB에서 생성), `isDeleted`는 false (기본값)
 
-### 3.5 DowntimeErrorCode.kt - 에러 코드 정의
+### 5.5 DowntimeErrorCode.kt - 에러 코드 정의
 
 > 파일: `downtime-api/src/main/kotlin/.../api/exception/DowntimeErrorCode.kt`
 
@@ -466,7 +783,7 @@ enum class DowntimeErrorCode(
 - `code`는 enum 이름(`ALREADY_DELETED` 등)을 그대로 사용
 - `BusinessException(DowntimeErrorCode.INVALID_PERIOD)`로 던지면 공통 에러 핸들러가 처리
 
-### 3.6 DowntimeValidator.kt - 비즈니스 검증
+### 5.6 DowntimeValidator.kt - 비즈니스 검증
 
 > 파일: `downtime-api/src/main/kotlin/.../api/validator/DowntimeValidator.kt`
 
@@ -525,7 +842,7 @@ class DowntimeValidator {
 - `?.let { }` = Kotlin null-safe scope function. `replacementTargetType`이 null이면 블록 전체를 건너뜀
 - `validateForDelete`는 null 체크 후 non-null `Downtime`을 반환 → 호출측에서 `!!` 없이 안전하게 사용
 
-### 3.7 DowntimeService.kt - 비즈니스 로직
+### 5.7 DowntimeService.kt - 비즈니스 로직
 
 > 파일: `downtime-api/src/main/kotlin/.../api/service/DowntimeService.kt`
 
@@ -534,7 +851,8 @@ class DowntimeValidator {
 @Transactional(readOnly = true)        // 클래스 레벨: 기본 읽기 전용
 class DowntimeService(
     private val downtimeRepository: DowntimeRepository,
-    private val downtimeValidator: DowntimeValidator
+    private val downtimeValidator: DowntimeValidator,
+    private val downtimeProperties: DowntimeProperties
 ) {
 ```
 
@@ -590,10 +908,15 @@ suspend fun delete(downtimeSeq: Int, session: Session): Downtime {
 
 ```kotlin
 fun findActive(serviceType: DowntimeServiceType, baseDt: LocalDateTime?): Flow<Downtime> =
-    downtimeRepository.findActive(serviceType.name, baseDt ?: LocalDateTime.now())
+    downtimeRepository.findActive(
+        serviceType.name,
+        baseDt ?: LocalDateTime.now(),
+        downtimeProperties.afterWaitTime.toLong()
+    )
 ```
 
 - `baseDt`가 null이면 현재 시각 사용
+- `afterWaitTime`(기본 60초)을 Repository에 전달하여 DB 쿼리 레벨에서 적용
 - `suspend` 아닌 일반 함수 → `Flow`를 반환 (lazy 스트림)
 - 다른 MSA에서 가장 많이 호출하는 API
 
@@ -617,7 +940,7 @@ suspend fun search(query: StrapiQuery): Page<Downtime> {
 - `?filters[serviceType][$eq]=FAX&sort[0]=startDt:desc&page=0&size=25`
 - `JooqSearchCriteria`가 이를 jOOQ 조건(WHERE, ORDER BY, LIMIT, OFFSET)으로 변환
 
-### 3.8 DowntimeController.kt - REST 엔드포인트
+### 5.8 DowntimeController.kt - REST 엔드포인트
 
 > 파일: `downtime-api/src/main/kotlin/.../api/controller/DowntimeController.kt`
 
@@ -642,6 +965,9 @@ private fun defaultSession() = Session(
 
 - `@RequireSession`이 주석 처리되어 있어서, 세션 없이 요청하면 이 기본 세션이 사용됨
 - **개발/테스트 편의용** (운영에서는 `@RequireSession` 활성화 예정)
+
+> **주의: `@RequireSession`과 Spring Security JWT 인증은 별개 레이어다.**
+> `@RequireSession` 주석 처리 = 세션 검증만 꺼진 것. Spring Security(`knet.commons.security.enabled: true`)는 여전히 JWT 토큰을 검증한다. 그래서 테스트에서 JWT 토큰 없이 요청하면 401이 반환된다. 즉 `@RequireSession`을 주석 처리해도 인증 자체가 꺼지는 건 아니다.
 
 #### POST /api/downtimes - 등록
 
@@ -693,11 +1019,11 @@ fun findActive(
     ResponseEntity.ok(downtimeService.findActive(serviceType, baseDt))
 ```
 
-- `suspend fun`이 아닌 일반 `fun` → `Flow`를 반환하므로 suspend 불필요
+- `suspend fun`이 아닌 일반 `fun` → `Flow`를 그대로 반환하므로 suspend 불필요. 반면 `search()`는 `suspend fun`인데, 내부에서 `Flow`를 `.toList()`로 소비한 후 `Page`로 변환하기 때문. **`Flow`를 그대로 반환 = `fun`, `Flow`를 소비해서 결과를 만듦 = `suspend fun`**
 - `serviceType`은 필수, `baseDt`는 선택 (미지정 시 현재 시각)
 - `Flow<Downtime>`을 반환 → WebFlux가 스트리밍 응답으로 변환 (JSON Array)
 
-### 3.9 DowntimeRepository.kt - 데이터 접근 (jOOQ + R2DBC)
+### 5.9 DowntimeRepository.kt - 데이터 접근 (jOOQ + R2DBC)
 
 > 파일: `downtime-api/src/main/kotlin/.../api/repository/DowntimeRepository.kt`
 
@@ -776,13 +1102,15 @@ suspend fun softDelete(downtime: Downtime) {
 #### findActive() - 활성 다운타임 조회
 
 ```kotlin
-fun findActive(serviceType: String, baseDt: LocalDateTime): Flow<Downtime> {
+fun findActive(serviceType: String, baseDt: LocalDateTime, afterWaitTimeSeconds: Long = 0): Flow<Downtime> {
+    // endDt + afterWaitTime >= baseDt → endDt >= baseDt - afterWaitTime (동일 조건)
+    val adjustedBaseDt = baseDt.minusSeconds(afterWaitTimeSeconds)
     return Flux.from(
         dsl.selectFrom(DOWNTIMES)
             .where(DOWNTIMES.SERVICE_TYPE.eq(serviceType))
-            .and(DOWNTIMES.START_DT.le(baseDt))       // startDt <= 기준시각
-            .and(DOWNTIMES.END_DT.ge(baseDt))         // endDt >= 기준시각
-            .and(DOWNTIMES.IS_DELETED.eq(false))       // 삭제되지 않은 것만
+            .and(DOWNTIMES.START_DT.le(baseDt))              // startDt <= 기준시각
+            .and(DOWNTIMES.END_DT.ge(adjustedBaseDt))        // endDt >= 기준시각 - 대기시간
+            .and(DOWNTIMES.IS_DELETED.eq(false))              // 삭제되지 않은 것만
             .orderBy(DOWNTIMES.START_DT)
     ).asFlow().map { mapToDowntime(it) }
 }
@@ -790,7 +1118,8 @@ fun findActive(serviceType: String, baseDt: LocalDateTime): Flow<Downtime> {
 
 **WHERE 조건 해석:**
 ```
-기준시각이 startDt와 endDt 사이에 있고, 삭제되지 않은 다운타임
+startDt <= 기준시각 AND endDt >= (기준시각 - 60초) AND 삭제되지 않은 다운타임
+→ 다운타임 종료 후 60초(afterWaitTime)까지 활성으로 간주
 ```
 
 - `Flux.from(...)` → 여러 건 조회 (0건 이상)
@@ -862,9 +1191,9 @@ private fun mapToDowntime(record: Record) = Downtime(
 
 ---
 
-## 4. 빌드 시스템 이해
+## 6. 빌드 시스템 이해
 
-### 4.1 루트 build.gradle.kts
+### 6.1 루트 build.gradle.kts
 
 **주요 설정:**
 
@@ -889,7 +1218,7 @@ configure<JavaPluginExtension> {
 }
 ```
 
-### 4.2 downtime-api/build.gradle.kts - 전체 주석 분석
+### 6.2 downtime-api/build.gradle.kts - 전체 주석 분석
 
 > 파일: `downtime-api/build.gradle.kts`
 
@@ -1078,7 +1407,7 @@ tasks.named("compileKotlin") { dependsOn("generateJooq") }
 | 태스크 설정 | onlyIf(스킵) → doFirst(컨테이너+Flyway) → doLast(종료) |
 | 컴파일 순서 | generateJooq → compileKotlin 순서 보장 |
 
-### 4.3 downtime/build.gradle.kts - 공유 모듈 배포
+### 6.3 downtime/build.gradle.kts - 공유 모듈 배포
 
 ```kotlin
 publishing {
@@ -1099,7 +1428,7 @@ publishing {
 - `maven-publish` 플러그인으로 Nexus에 라이브러리 배포
 - 다른 MSA에서 `implementation("com.knet.msa.downtime:downtime:x.x.x")`로 의존
 
-### 4.4 nx.json - Nx 모노레포
+### 6.4 nx.json - Nx 모노레포
 
 ```json
 {
@@ -1118,7 +1447,7 @@ publishing {
 - Conventional Commits 기반 자동 버전 결정 (feat → minor, fix → patch)
 - 태그 형식: `downtime/v1.0.0`, `downtime-api/v1.0.0`
 
-### 4.5 Gradle Version Catalog
+### 6.5 Gradle Version Catalog
 
 > 파일: `gradle/libs.versions.toml` (루트 프로젝트 공유 파일)
 
@@ -1152,10 +1481,10 @@ dependencies {
 - IDE 자동완성으로 오타 방지 (`libs.spring.boot.starter.` 까지 치면 목록 나옴)
 - 의존성 변경 이력을 **한 파일에서 추적** 가능
 
-### 4.6 Java 25 + Kotlin 컴파일러 설정
+### 6.6 Java 25 + Kotlin 컴파일러 설정
 
 ```kotlin
-// settings.gradle.kts - Java Toolchain
+// build.gradle.kts (루트) - Java Toolchain
 configure<JavaPluginExtension> {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))   // Java 25
@@ -1175,7 +1504,7 @@ compilerOptions {
 
 ---
 
-## 5. 설정 파일 분석
+## 7. 설정 파일 분석
 
 ### application.yaml (downtime-api)
 
@@ -1211,12 +1540,13 @@ knet:
 - `dev | prod` 프로필: Config Server 연결 활성화
   - `spring.cloud.config.enabled: true`
   - `configserver:http://${CONFIG_SERVER_HOST}:${CONFIG_SERVER_PORT}`
+  - **주의:** `spring.config.import`는 프로필 활성화 시 **덮어쓰기**되므로, dev/prod 프로필에서 `classpath:application-downtime.yaml`을 다시 명시해야 한다. 안 하면 `knet.downtime.after-wait-time` 설정이 누락됨
 
 ---
 
-## 6. 테스트 코드 분석
+## 8. 테스트 코드 분석
 
-### 6.1 AbstractIntegrationTest.kt - 테스트 인프라 기반
+### 8.1 AbstractIntegrationTest.kt - 테스트 인프라 기반
 
 ```kotlin
 abstract class AbstractIntegrationTest {
@@ -1243,7 +1573,7 @@ abstract class AbstractIntegrationTest {
 - `@DynamicPropertySource` → 런타임에 결정되는 컨테이너 포트를 Spring 설정에 주입
 - Flyway가 테스트 시작 시 자동으로 마이그레이션 실행
 
-### 6.2 DowntimeValidatorTest.kt - 단위 테스트
+### 8.2 DowntimeValidatorTest.kt - 단위 테스트
 
 ```kotlin
 class DowntimeValidatorTest {
@@ -1268,7 +1598,7 @@ class DowntimeValidatorTest {
 | validateForDelete | null | NOT_FOUND |
 | validateForDelete | 이미 삭제됨 | ALREADY_DELETED |
 
-### 6.3 DowntimeServiceTest.kt - 통합 테스트
+### 8.3 DowntimeServiceTest.kt - 통합 테스트
 
 ```kotlin
 @SpringBootTest
@@ -1280,7 +1610,7 @@ class DowntimeServiceTest : AbstractIntegrationTest() {
 - `AbstractIntegrationTest` 상속 → Testcontainers DB 사용
 - **실제 DB에 INSERT/SELECT/UPDATE** 수행
 
-### 6.4 DowntimeControllerTest.kt - API 통합 테스트
+### 8.4 DowntimeControllerTest.kt - API 통합 테스트
 
 ```kotlin
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -1310,142 +1640,7 @@ webTestClient.post().uri("/api/downtimes")
 
 ---
 
-## 7. 요청 흐름 따라가기 (시나리오별)
-
-### 시나리오 1: "KB은행 점검 다운타임 등록"
-
-**요청:**
-```http
-POST /api/downtimes
-Authorization: Bearer eyJ...
-Content-Type: application/json
-
-{
-  "serviceType": "BANK",
-  "targetType": "BANK_KB",
-  "startDt": "2026-04-07T23:00:00",
-  "endDt": "2026-04-08T05:00:00",
-  "replacementTargetType": "BANK_SHINHAN",
-  "memo": "KB은행 야간 정기점검"
-}
-```
-
-**코드 흐름:**
-
-```
-1. DowntimeController.insert()
-   ├── @RequestBody로 JSON → DowntimeInsertDto 변환
-   ├── JWT에서 Session 추출 (또는 defaultSession)
-   └── downtimeService.insert(dto, session) 호출
-
-2. DowntimeService.insert()
-   ├── Downtime.from(dto, session) → Downtime 도메인 객체 생성
-   │   └── downtimeSeq = null, isDeleted = false
-   │
-   ├── downtimeValidator.validateForInsert(downtime)
-   │   ├── startDt(23:00) < endDt(05:00 다음날) → OK
-   │   ├── startDt ≠ endDt → OK
-   │   ├── BANK_KB.serviceType == BANK → OK
-   │   ├── BANK_SHINHAN.serviceType == BANK → OK
-   │   └── BANK_KB ≠ BANK_SHINHAN → OK
-   │
-   └── downtimeRepository.insert(downtime)
-       ├── INSERT INTO downtimes (...) VALUES (...) RETURNING downtime_seq
-       └── downtime.downtimeSeq = 42 (DB에서 생성된 PK)
-
-3. ResponseEntity.status(201).body(downtime) 반환
-```
-
-**응답:**
-```json
-{
-  "downtimeSeq": 42,
-  "serviceType": "BANK",
-  "targetType": "BANK_KB",
-  "startDt": "2026-04-07T23:00:00",
-  "endDt": "2026-04-08T05:00:00",
-  "replacementTargetType": "BANK_SHINHAN",
-  "memo": "KB은행 야간 정기점검",
-  "isDeleted": false,
-  "session": { "brand": "BAROBILL", "doSessionType": "USER", ... },
-  "deleteSession": null
-}
-```
-
-### 시나리오 2: "문자 서비스가 현재 다운타임 확인"
-
-**요청:**
-```http
-GET /api/downtimes/active?serviceType=MESSAGE
-```
-
-**코드 흐름:**
-
-```
-1. DowntimeController.findActive()
-   ├── serviceType = MESSAGE
-   └── baseDt = null → LocalDateTime.now() 사용
-
-2. DowntimeService.findActive()
-   └── downtimeRepository.findActive("MESSAGE", 2026-04-07T14:30:00)
-
-3. DowntimeRepository.findActive()
-   └── SELECT * FROM downtimes
-       WHERE service_type = 'MESSAGE'
-         AND start_dt <= '2026-04-07T14:30:00'
-         AND end_dt >= '2026-04-07T14:30:00'
-         AND is_deleted = false
-       ORDER BY start_dt
-
-4. Flow<Downtime> 반환 → WebFlux가 JSON Array로 직렬화
-```
-
-**응답 (활성 다운타임이 있는 경우):**
-```json
-[
-  {
-    "downtimeSeq": 35,
-    "serviceType": "MESSAGE",
-    "targetType": "MESSAGE_LG",
-    "startDt": "2026-04-07T14:00:00",
-    "endDt": "2026-04-07T16:00:00",
-    "replacementTargetType": "MESSAGE_SEJONG",
-    ...
-  }
-]
-```
-
-→ 문자 서비스는 이 응답을 보고 LG 대신 세종으로 우회 발송
-
-### 시나리오 3: "등록 시 검증 실패 - 타겟 불일치"
-
-**요청:**
-```json
-{
-  "serviceType": "FAX",
-  "targetType": "BANK_KB",    ← FAX인데 BANK 타겟!
-  "startDt": "2026-04-07T23:00:00",
-  "endDt": "2026-04-08T05:00:00"
-}
-```
-
-```
-1. DowntimeValidator.validateForInsert()
-   └── BANK_KB.serviceType(BANK) != FAX → INVALID_TARGET_TYPE 예외!
-
-2. BusinessException(DowntimeErrorCode.INVALID_TARGET_TYPE)
-   └── 공통 에러 핸들러가 처리
-
-3. 응답: 400 Bad Request
-   {
-     "code": "INVALID_TARGET_TYPE",
-     "message": "대상 타겟이 서비스 타입과 일치하지 않음."
-   }
-```
-
----
-
-## 8. 핵심 패턴 & 기법 정리
+## 9. 핵심 패턴 & 기법 정리
 
 ### 패턴 1: Reactor ↔ Coroutines 브릿지
 
@@ -1512,25 +1707,25 @@ downtime.delete(session)
 
 ---
 
-## 9. 핵심 설계 원칙 요약
+## 10. 핵심 설계 원칙 요약
 
 | 원칙 | 설명 | 적용 사례 |
 |------|------|----------|
 | 불필요한 추상화 제거 | 구현체가 하나뿐인 Interface 제거 | Service Interface+Impl → 단일 클래스 |
 | 외부 의존 최소화 | 다른 MSA 모듈에 대한 의존 임시 제거 (각 MSA 최신 버전 전환 후 재연결 예정) | TargetType에서 fax/card/message/bank 의존 제거 |
-| 관심사 분리 | 검증/상태전이/영속화를 각 계층에 배치 | Validator 분리, afterWaitTime을 호출측으로 위임 |
+| 관심사 분리 | 검증/상태전이/영속화를 각 계층에 배치 | Validator 분리, afterWaitTime을 DB 쿼리 레벨로 이동 |
 | 타입 안전성 강화 | 컴파일 타임에 오류를 잡는 구조 | MyBatis XML → jOOQ, Java null → Kotlin non-null |
 | Non-blocking 전환 | DB I/O까지 Non-blocking으로 처리 | MVC+JDBC → WebFlux+R2DBC+Coroutines |
 | 인프라 자동화 | 수동 작업을 자동화 | 수동 스키마 → Flyway, 수동 버전 → Nx, 외부 DB → Testcontainers |
 
 ---
 
-## 10. v1 vs v2 변경점 비교 (downtime-api/v1.0.16 → v2.0.x)
+## 11. v1 vs v2 변경점 비교 (downtime-api/v1.0.16 → v2.0.x)
 
 > v1 = `downtime-api/v1.0.0` ~ `v1.0.16` (Java 8 + Spring Boot 2.x)
 > v2 = `downtime-api/v2.0.0` ~ 현재 (Kotlin + Spring Boot 4.x)
 
-### 10.1 기술 스택 전면 교체
+### 11.1 기술 스택 전면 교체
 
 | 항목 | v1 | v2 | 변경 이유 |
 |------|:--:|:--:|-----------|
@@ -1548,7 +1743,7 @@ downtime.delete(session)
 | 버전 관리 | 수동 | **Nx + Conventional Commits** | 자동화 |
 | Spring Cloud | Hoxton.SR4 | **2025.1.1** | 최신 버전 |
 
-### 10.2 파일 구조 비교
+### 11.2 파일 구조 비교
 
 ```
 v1 (Java 8 + MyBatis)                         v2 (Kotlin + jOOQ)
@@ -1603,7 +1798,7 @@ downtime-api/                                 downtime-api/
                                               └── (jOOQ 코드는 빌드 시 자동 생성)
 ```
 
-### 10.3 DowntimeServiceType 변경
+### 11.3 DowntimeServiceType 변경
 
 **v1.0.0** - 세금계산서/현금영수증을 스크래핑/전송으로 분리 (9종)
 ```java
@@ -1621,7 +1816,7 @@ CASHBILL("현금영수증"),
 
 > v1 중간에 `SCRAPING`/`SUBMIT` 구분을 없애고 하나로 통합함. v2도 동일. 각 MSA(세금계산서, 현금영수증 등)가 최신 버전으로 전환되면 ServiceType도 그에 맞게 재조정 예정.
 
-### 10.4 DowntimeTargetType 변경 - 외부 MSA 의존 제거
+### 11.4 DowntimeTargetType 변경 - 외부 MSA 의존 제거
 
 **v1 (다른 MSA 모듈에 의존)**
 ```java
@@ -1655,7 +1850,7 @@ v1: downtime → fax, card, message, bank (4개 모듈 의존)
 v2: downtime → (의존 없음, 자체 완결)
 ```
 
-### 10.5 Controller 변경
+### 11.5 Controller 변경
 
 **v1 - Java + MVC + AOP**
 ```java
@@ -1723,7 +1918,7 @@ class DowntimeController(private val downtimeService: DowntimeService) {
 | 활성 조회 파라미터 | `List<ServiceType>` (다건) → `ServiceType` (단건, v1.0.16) | `ServiceType` (단건) |
 | AOP | `DowntimeApiAspect` (수동) | commons-web-server (자동) |
 
-### 10.6 Service 계층 변경
+### 11.6 Service 계층 변경
 
 **v1 - Interface + Implementation 분리**
 ```java
@@ -1761,7 +1956,7 @@ class DowntimeService(
 | afterWaitTime | 서비스에서 필터링 | 호출측에 위임 |
 | 동시성 제어 | 없음 | `SELECT FOR UPDATE` |
 
-### 10.7 afterWaitTime 로직 변경 (중요!)
+### 11.7 afterWaitTime 로직 변경 (중요!)
 
 **v1 - 서비스 내에서 Java 코드로 필터링**
 ```java
@@ -1812,7 +2007,7 @@ fun findActive(serviceType: String, baseDt: LocalDateTime, afterWaitTimeSeconds:
 - v1: `LocalDateTime.now()`를 필터 안에서 호출 (매 레코드마다 시각이 다를 수 있음)
 - v2: `baseDt`를 한 번만 계산해서 일관된 기준 시각 사용
 
-### 10.8 Domain 모델 변경
+### 11.8 Domain 모델 변경
 
 **v1**
 ```java
@@ -1876,7 +2071,7 @@ class Downtime(
 | `delete()` | 검증 + 상태 전이 | 상태 전이만 |
 | jOOQ 지원 | 없음 | `FIELD_MAP`, `FIELD_EXPANSIONS` |
 
-### 10.9 DTO 변경 - 대폭 간소화
+### 11.9 DTO 변경 - 대폭 간소화
 
 **v1 - 3개 DTO**
 
@@ -1932,7 +2127,7 @@ data class DowntimeInsertDto(
 - v2는 `StrapiQuery` + jOOQ `FIELD_MAP`으로 **새 필드 추가 시 코드 수정 불필요**
 - v1의 수동 null 검증 → Kotlin non-null 타입으로 **언어 레벨에서 해결**
 
-### 10.10 데이터 접근 계층 변경 (MyBatis → jOOQ)
+### 11.10 데이터 접근 계층 변경 (MyBatis → jOOQ)
 
 **v1 - MyBatis Mapper Interface + XML (155줄)**
 ```java
@@ -2020,9 +2215,9 @@ class DowntimeRepository(private val dsl: DSLContext) {
 | I/O 모델 | Blocking (JDBC) | **Non-blocking (R2DBC)** |
 | 동시성 제어 | 없음 | `SELECT FOR UPDATE` |
 
-### 10.11 에러 코드 변경
+### 11.11 에러 코드 변경
 
-**v1 (11개)**
+**v1 (12개)**
 ```java
 EMPTY_SESSION,              // v2에서 제거 - commons에서 처리
 NOT_FOUND,                  // v2에서 제거 - 공통 에러 코드 사용
@@ -2048,12 +2243,12 @@ INVALID_PERIOD,
 SAME_START_END_TIME
 ```
 
-**제거된 5개:**
+**제거된 6개:**
 - `EMPTY_SESSION` → commons-web-server가 JWT 검증 시 처리
 - `NOT_FOUND` → `CommonWebServerErrorCode.NOT_FOUND` 공통 코드 사용
 - `EMPTY_SERVICE_TYPE`, `EMPTY_TARGET_TYPE`, `EMPTY_START_DT`, `EMPTY_END_DT` → Kotlin non-null 타입이므로 JSON 파싱 단계에서 자동 검증 (코드에 도달하기 전에 400 에러)
 
-### 10.12 삭제된 클래스 (v1에만 존재)
+### 11.12 삭제된 클래스 (v1에만 존재)
 
 | v1 클래스 | 역할 | v2에서 제거 이유 |
 |-----------|------|-----------------|
@@ -2071,7 +2266,7 @@ SAME_START_END_TIME
 | `logback-spring.xml` | 로깅 설정 | 기본 설정 사용 |
 | `Dockerfile.*` | Docker 빌드 | Jenkins + Nx 파이프라인으로 대체 |
 
-### 10.13 설정 구조 변경
+### 11.13 설정 구조 변경
 
 **v1 - bootstrap.yml + application.yml 분리**
 ```yaml
@@ -2131,7 +2326,7 @@ spring:
 - 커스텀 DataSource 설정 → Spring Boot 자동 설정 (`spring.r2dbc.*`)
 - JDBC → R2DBC + Flyway용 JDBC 이중 설정
 
-### 10.14 빌드 시스템 변경
+### 11.14 빌드 시스템 변경
 
 **v1 - Groovy DSL**
 ```groovy
@@ -2193,7 +2388,7 @@ dependencies {
 | 테스트 DB | 외부 DB 의존 | **Testcontainers** |
 | jOOQ 코드 생성 | 없음 | **빌드 시 자동 생성** |
 
-### 10.15 테스트 인프라 변경
+### 11.15 테스트 인프라 변경
 
 **v1**
 ```
@@ -2212,7 +2407,7 @@ dependencies {
 - AbstractIntegrationTest 기반 클래스로 공통화
 ```
 
-### 10.16 API 엔드포인트 변경
+### 11.16 API 엔드포인트 변경
 
 | 기능 | v1 경로 | v2 경로 | 변경 사항 |
 |------|---------|---------|-----------|
@@ -2235,7 +2430,7 @@ v1.0.16: ?serviceType=FAX                       (단일 ServiceType)
 v2:      ?serviceType=FAX&baseDt=2026-04-07T14:00:00  (단일 ServiceType + 선택적 baseDt)
 ```
 
-### 10.17 동시성 제어 추가 (v2 신규)
+### 11.17 동시성 제어 추가 (v2 신규)
 
 **v1 - 동시 삭제 시 문제 가능**
 ```java
@@ -2253,7 +2448,7 @@ downtimeRepository.softDelete(downtime)
 ```
 → 첫 번째 요청이 락을 잡으면 두 번째 요청은 대기 → 안전하게 처리
 
-### 10.18 변경 요약 한눈에 보기
+### 11.18 변경 요약 한눈에 보기
 
 ```
 v1 구조:
@@ -2278,152 +2473,10 @@ Controller (ResponseEntity 반환, suspend/Flow)
 **핵심 설계 철학 변화:**
 1. **불필요한 추상화 제거**: Interface+Impl → 단일 클래스, 커스텀 SearchDTO → 범용 StrapiQuery
 2. **외부 의존 제거**: 4개 MSA 모듈 의존 → 자체 완결
-3. **관심사 분리**: 검증을 Validator로, afterWaitTime을 호출측으로 분리
+3. **관심사 분리**: 검증을 Validator로 분리, afterWaitTime을 Java 필터링에서 DB 쿼리 레벨로 이동
 4. **타입 안전성 강화**: XML 문자열 → jOOQ 타입 안전, Java null → Kotlin non-null
 5. **Non-blocking 전환**: MVC+JDBC → WebFlux+R2DBC+Coroutines
 6. **자동화**: 수동 스키마 → Flyway, 수동 버전 → Nx, 수동 테스트 DB → Testcontainers
-
----
-
-## 11. Kotlin 핵심 문법 입문
-
-> Java를 아는 팀원이 이 프로젝트 코드를 읽기 위해 알아야 할 Kotlin 문법만 정리.
-
-### 11.1 Null Safety - 컴파일 타임 null 체크
-
-```kotlin
-// Non-null: 절대 null이 될 수 없음 (Java에는 없는 개념)
-val serviceType: DowntimeServiceType    // null 넣으면 컴파일 에러
-
-// Nullable: null 허용을 명시적으로 선언
-val memo: String?                       // null 가능
-val baseDt: LocalDateTime? = null       // 기본값으로 null 지정
-
-// Safe call (?.) - null이면 평가 중단, null 반환
-downtime.replacementTargetType?.name    // Java: downtime.getReplacementTargetType() != null ? ... : null
-
-// Elvis (?:) - null이면 대체값 사용
-session ?: defaultSession()             // Java: session != null ? session : defaultSession()
-```
-
-**Java와 비교:**
-```java
-// Java - 런타임에 NPE 발생 가능
-String name = downtime.getReplacementTargetType().name();  // NPE 위험!
-
-// Java - 방어 코드 필요
-if (downtime.getReplacementTargetType() != null) {
-    String name = downtime.getReplacementTargetType().name();
-}
-```
-
-```kotlin
-// Kotlin - 컴파일러가 null 체크를 강제
-val name = downtime.replacementTargetType?.name     // null-safe, NPE 불가능
-```
-
-이 프로젝트에서 **nullable이 쓰인 곳:** DTO의 `replacementTargetType?`, `memo?`, Controller의 `Session?`, `baseDt?`, Domain의 `downtimeSeq?`, `deleteSession?`
-
-### 11.2 val / var - 불변과 가변
-
-```kotlin
-val name = "hello"      // final String name = "hello";  (불변, 재할당 불가)
-var count = 0           // int count = 0;                 (가변, 재할당 가능)
-count = 1               // OK
-name = "world"          // 컴파일 에러!
-```
-
-이 프로젝트에서의 규칙:
-- **DTO**: `val`만 사용 → 생성 후 변경 불가 (안전)
-- **Domain**: `var` 사용 → insert 후 `downtimeSeq` 할당, delete 시 `isDeleted` 변경 필요
-
-### 11.3 data class - Java의 Lombok 대체
-
-```java
-// Java + Lombok: 여전히 annotation processor 필요
-@Getter @Setter @EqualsAndHashCode @ToString @AllArgsConstructor
-public class DowntimeRegisterDto {
-    private DowntimeServiceType serviceType;
-    private DowntimeTargetType targetType;
-    private LocalDateTime startDT;
-    private LocalDateTime endDT;
-    private DowntimeTargetType replacementTargetType;
-    private String memo;
-}
-```
-
-```kotlin
-// Kotlin: 한 줄로 동일한 기능 (getter/setter/equals/hashCode/toString/copy 자동 생성)
-data class DowntimeInsertDto(
-    val serviceType: DowntimeServiceType,
-    val targetType: DowntimeTargetType,
-    val startDt: LocalDateTime,
-    val endDt: LocalDateTime,
-    val replacementTargetType: DowntimeTargetType? = null,  // 기본값 지정 가능
-    val memo: String? = null
-)
-```
-
-### 11.4 suspend fun / Flow - 비동기를 동기처럼
-
-```java
-// Java - CompletableFuture로 비동기 처리 (콜백 지옥 가능)
-CompletableFuture<Downtime> future = repository.findBySeq(seq);
-future.thenApply(downtime -> {
-    downtime.delete(session);
-    return repository.softDelete(downtime);
-}).thenApply(result -> ...);
-```
-
-```kotlin
-// Kotlin Coroutines - 비동기인데 동기처럼 읽힌다
-suspend fun delete(downtimeSeq: Int, session: Session): Downtime {
-    val downtime = downtimeRepository.findBySeqForUpdate(downtimeSeq)  // 비동기 대기 (자동)
-    downtime.delete(session)                                            // 일반 코드
-    downtimeRepository.softDelete(downtime)                             // 비동기 대기 (자동)
-    return downtime
-}
-```
-
-| 개념 | 역할 | Java 대응 |
-|------|------|-----------|
-| `suspend fun` | 일시 중단 가능한 함수 (단건) | `CompletableFuture<T>` / `Mono<T>` |
-| `Flow<T>` | 여러 값을 비동기로 내보내는 스트림 (다건) | `Stream<T>` / `Flux<T>` |
-| `awaitSingleOrNull()` | Mono → suspend 변환 | `.get()` / `.block()` |
-| `.asFlow()` | Flux → Flow 변환 | - |
-
-### 11.5 let, apply - 스코프 함수
-
-이 프로젝트에서 자주 나오는 두 가지:
-
-```kotlin
-// let: null이 아닐 때만 블록 실행 (it = 해당 값)
-record.getOrNull(DOWNTIMES.REPLACEMENT_TARGET_TYPE)
-    ?.let { DowntimeTargetType.valueOf(it) }
-// Java: String val = record.get(...); return val != null ? DowntimeTargetType.valueOf(val) : null;
-
-// apply: 객체 설정 후 자신을 반환
-PostgreSQLContainer("postgres:17-alpine")
-    .withDatabaseName("downtime")
-    .withUsername("postgres")
-    .apply { start() }              // start() 호출 후 컨테이너 객체 반환
-```
-
-### 11.6 when - Java switch의 강화판
-
-```kotlin
-// 이 프로젝트에서 직접 쓰이진 않지만, 호출하는 MSA에서 쓸 패턴
-when (downtime.targetType) {
-    CARD_BC      -> handleBC()
-    CARD_KB      -> handleKB()
-    CARD_SHINHAN -> handleShinhan()
-    else         -> handleDefault()
-}
-```
-
-- `break` 불필요 (자동)
-- 표현식으로 사용 가능 (`val result = when (x) { ... }`)
-- enum의 모든 케이스를 처리했는지 컴파일러가 검증 (`else` 없으면 경고)
 
 ---
 
@@ -2482,20 +2535,20 @@ val query = dsl.selectFrom(DOWNTIMES)
 
 오히려 v2가 더 유연하다. v1은 필터 하나 추가하려면 DTO에 필드 추가 + XML에 `<if>` 블록 추가가 필요했지만, v2는 `Downtime.FIELD_MAP`에 자동 매핑되므로 **코드 수정 없이 새 필드 검색이 가능**하다.
 
-### Q4. v1에서 afterWaitTime을 서비스에서 처리했는데, v2에서 빼버리면 호출하는 MSA 쪽에서 다 수정해야 하는 거 아닌가?
+### Q4. afterWaitTime 처리 방식이 v1과 v2에서 어떻게 달라졌나?
 
 **답변:**
 
-맞다. 이건 **의도적인 설계 변경**이다.
+v1에서는 DB에서 전체 조회 후 Java에서 `endDt + 60초` 필터링을 했다. v2에서는 **DB 쿼리 레벨에서 처리**하도록 개선했다.
 
-v1에서 afterWaitTime을 이 서비스에서 처리하면 문제가 있었다:
-- 다운타임이 끝났는데도 60초 동안 "아직 점검 중"이라고 응답 → 호출하는 MSA 입장에서 혼란
-- "endDt가 14:00인데 왜 14:00:30에도 점검 중이라고 나와?" 같은 이슈
+v1의 문제:
+- DB에서 불필요한 데이터까지 가져온 후 Java에서 필터링 (비효율)
+- `LocalDateTime.now()`를 매 레코드 필터마다 호출 (미묘한 시각 차이 가능)
 
-v2에서는 다운타임 API는 **등록된 일정 그대로 반환**하고, afterWaitTime 적용은 호출측에서 판단한다. 이렇게 하면:
-- 다운타임 API의 응답이 예측 가능 (등록한 대로 나옴)
-- 각 MSA가 자기 서비스 특성에 맞게 대기 시간을 다르게 적용할 수도 있음
-- `DowntimeProperties.afterWaitTime` 값은 여전히 설정에 있으므로, 호출측이 이 값을 참조
+v2 개선:
+- `baseDt - afterWaitTime`으로 조정해서 **DB 쿼리 조건에 반영** (필요한 데이터만 조회)
+- `DowntimeProperties.afterWaitTime`을 Service에서 주입받아 Repository에 전달
+- 호출하는 MSA는 응답을 그대로 사용하면 됨 (별도 필터링 불필요)
 
 ### Q5. SELECT FOR UPDATE를 쓰면 성능 문제가 없나? 락을 거는 거니까 느려지지 않나?
 
@@ -2669,7 +2722,7 @@ Nexus에 publish된 JAR을 의존성으로 추가.
 Downtime 도메인 객체는 `var`로 상태가 변경됨 (insert 후 PK 할당, delete 시 상태 전이). `data class`의 `equals()`/`hashCode()`가 가변 필드를 포함하면 HashSet/HashMap에서 문제가 생길 수 있어 일반 class 사용.
 
 ### Q18. AfterWaitTime은 어디서 사용하나?
-`DowntimeProperties.afterWaitTime` (60초)은 이 서비스 자체에서 사용하기보단, 이 API를 호출하는 **다른 MSA**에서 활용하는 설정. 다운타임이 끝나도 바로 전환하지 않고 60초 더 기다리는 안전 마진.
+`DowntimeProperties.afterWaitTime` (기본 60초)은 `DowntimeService.findActive()`에서 `DowntimeRepository`에 전달되어, **DB 쿼리 조건에 반영**된다. 다운타임 종료 시각 + 60초까지 활성 상태로 간주하여, 점검 직후 바로 전환하지 않고 안전 마진을 두는 역할.
 
 ---
 
