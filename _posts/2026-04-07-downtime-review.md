@@ -1287,58 +1287,93 @@ downtime.delete(session)
 
 ### 11.2 파일 구조 비교
 
+> v1 체크아웃(v1.0.16)으로 실제 확인한 구조
+
+**루트:**
+
 ```
-v1 (Java 8 + MyBatis)                         v2 (Kotlin + jOOQ)
+v1                                            v2
 ================================              ================================
 build.gradle (Groovy)                         build.gradle.kts (Kotlin DSL)
 settings.gradle                               settings.gradle.kts
+Jenkinsfile (파이프라인 직접 작성)              Jenkinsfile (2줄 - Shared Library 호출)
+Dockerfile.app.downtime-api                   downtime-api/Dockerfile (경량화)
+Dockerfile.lib.downtime                       (삭제 - 라이브러리는 Nexus JAR로 배포)
                                               gradle/libs.versions.toml (신규)
                                               nx.json (신규)
                                               package.json (신규)
-
-downtime/                                     downtime/
-├── build.gradle                              ├── build.gradle.kts
-├── enums/                                    ├── enums/
-│   ├── DowntimeServiceType.java              │   ├── DowntimeServiceType.kt
-│   └── DowntimeTargetType.java               │   └── DowntimeTargetType.kt
-├── config/                                   ├── config/
-│   ├── DowntimeProperties.java               │   └── DowntimeProperties.kt
-│   ├── DowntimeInitializer.java              │   (삭제됨)
-│   └── DowntimeSqlSessionConfig.java         │   (삭제됨 - MyBatis 제거)
-├── application-downtime.yml                  ├── application-downtime.yaml
-├── database-downtime/schema.sql              └── db/migration/V202602261430__init.sql
-└── mybatis-config.xml                            (삭제됨 - MyBatis 제거)
-
-downtime-api/                                 downtime-api/
-├── build.gradle                              ├── build.gradle.kts
-├── DowntimeApiApplication.java               ├── DowntimeApiApplication.kt
-├── controller/                               ├── controller/
-│   └── DowntimeApiController.java            │   └── DowntimeController.kt
-├── service/                                  ├── service/
-│   ├── DownTimeApiService.java (인터페이스)    │   └── DowntimeService.kt (클래스만)
-│   └── DownTimeApiServiceImpl.java           │       (인터페이스 제거)
-├── domain/                                   ├── domain/
-│   └── Downtime.java                         │   └── Downtime.kt
-├── dto/                                      ├── dto/
-│   ├── DowntimeRegisterDto.java              │   └── DowntimeInsertDto.kt
-│   ├── DowntimeSearchDto.java                │       (삭제 - StrapiQuery로 대체)
-│   └── CurrentDowntimeSearchDto.java         │       (삭제 - @RequestParam으로 대체)
-├── exception/                                ├── exception/
-│   └── DowntimeApiErrorCode.java             │   └── DowntimeErrorCode.kt
-├── mapper/                                   ├── repository/
-│   └── DowntimeApiMapper.java (인터페이스)     │   └── DowntimeRepository.kt (클래스)
-│                                             ├── validator/
-│   (Downtime.java 내부에 검증 로직)            │   └── DowntimeValidator.kt (신규 분리)
-├── aop/                                      │   (삭제 - commons에서 처리)
-│   └── DowntimeApiAspect.java                │
-├── config/                                   ├── config/
-│   ├── DowntimeApiResourceServerConfig.java  │   └── JooqR2dbcConfig.kt
-│   ├── DowntimeApiWebMvcConfig.java          │       (삭제 - commons에서 처리)
-│   └── mybatis/DowntimeApiSqlSessionConfig   │       (삭제 - MyBatis 제거)
-├── application.yml + bootstrap.yml           ├── application.yaml
-└── mybatis/DowntimeApiMapper.xml             │   (삭제 - jOOQ로 대체)
-                                              └── (jOOQ 코드는 빌드 시 자동 생성)
 ```
+
+**downtime 모듈 (공유 라이브러리): 13개 → 5개**
+
+```
+v1                                            v2
+================================              ================================
+downtime/                                     downtime/
+├── config/                                   ├── config/properties/
+│   ├── DowntimeInitializer.java (빈 내용)    │   └── DowntimeProperties.kt
+│   └── DowntimeProperties.java               │
+├── downtime/config/                ← 중첩!   ├── enums/
+│   └── DowntimeSqlSessionConfig.java         │   ├── DowntimeServiceType.kt
+├── downtime/enums/                 ← 중첩!   │   └── DowntimeTargetType.kt
+│   ├── DowntimeServiceType.java              │
+│   └── DowntimeTargetType.java               ├── application-downtime.yaml
+├── application-downtime.yml                  └── db/migration/
+├── database-downtime/schema.sql                  └── V202602261430__init.sql
+├── mybatis-config.xml                        
+└── test/ (3개 파일)                           (test 없음 - downtime-api에서 통합)
+```
+
+**v1 패키지 문제:** `com.knet.msa.downtime.downtime.enums` — 모듈명과 도메인명이 겹쳐서 `downtime.downtime` 중첩 발생. v2에서 `com.knet.msa.downtime.enums`로 정리.
+
+**downtime-api 모듈 (REST API): 25개 → ~12개**
+
+```
+v1                                            v2
+================================              ================================
+downtime-api/                                 downtime-api/
+├── api/aop/                                  │   (삭제 - commons에서 처리)
+│   └── DowntimeApiAspect.java                │
+├── api/config/                               ├── api/config/
+│   ├── DowntimeApiResourceServerConfig.java  │   └── JooqR2dbcConfig.kt
+│   ├── DowntimeApiWebMvcConfig.java          │       (삭제 - commons AutoConfig)
+│   └── mybatis/DowntimeApiSqlSessionConfig   │       (삭제 - MyBatis 제거)
+├── api/controller/                           ├── api/controller/
+│   └── DowntimeApiController.java            │   └── DowntimeController.kt
+├── api/dto/                                  ├── api/dto/
+│   ├── DowntimeRegisterDto.java              │   └── DowntimeInsertDto.kt
+│   ├── DowntimeSearchDto.java (14개 필터)    │       (삭제 - StrapiQuery로 대체)
+│   └── CurrentDowntimeSearchDto.java         │       (삭제 - @RequestParam으로 대체)
+├── downtime/domain/              ← 중첩!     ├── api/domain/
+│   └── Downtime.java                         │   └── Downtime.kt
+├── downtime/exception/           ← 중첩!     ├── api/exception/
+│   └── DowntimeApiErrorCode.java             │   └── DowntimeErrorCode.kt
+├── downtime/mapper/              ← 중첩!     ├── api/repository/
+│   └── DowntimeApiMapper.java                │   └── DowntimeRepository.kt
+├── downtime/service/             ← 중첩!     ├── api/service/
+│   ├── DownTimeApiService.java (Interface)   │   └── DowntimeService.kt (단일 클래스)
+│   └── DownTimeApiServiceImpl.java           │
+│   (검증은 Downtime.java 내부)                ├── api/validator/
+│                                             │   └── DowntimeValidator.kt (신규 분리)
+├── resources/                                ├── resources/
+│   ├── application.yml                       │   └── application.yaml
+│   ├── bootstrap.yml                         │       (bootstrap 삭제 - config import)
+│   ├── logback-spring.xml                    │       (삭제 - 기본 설정 사용)
+│   └── mybatis/DowntimeApiMapper.xml         │       (삭제 - jOOQ로 대체)
+└── test/ (8개 파일)                           └── test/ (5개 파일)
+                                                  (jOOQ 코드는 build/ 에 자동 생성)
+```
+
+**v1 → v2 핵심 변화:**
+
+| 항목 | v1 | v2 |
+|------|:--:|:--:|
+| 전체 파일 수 | **38개** | **~17개** (절반 이하) |
+| 패키지 구조 | `downtime.downtime.enums` (중첩) | `downtime.enums` (정리) |
+| 설정 클래스 | 직접 작성 5개 | **1개** (JooqR2dbcConfig만, 나머지 commons AutoConfig) |
+| MyBatis | xml + config 4개 | **전부 삭제** (jOOQ 대체) |
+| DTO | 3개 (SearchDto 14개 필터) | **1개** (StrapiQuery가 대체) |
+| Service | Interface + Impl | **단일 클래스** |
 
 ### 11.3 DowntimeServiceType 변경
 
