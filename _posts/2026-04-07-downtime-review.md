@@ -2701,7 +2701,19 @@ val dataSources = listOf(
 - `fun`: `Flow`를 반환할 때는 suspend 불필요. Flow 자체가 lazy 스트림이라 구독 시점에 실행
 
 ### Q14. R2DBC인데 왜 Flyway는 JDBC를 쓰나?
-Flyway는 마이그레이션 실행 시 DDL을 수행하는데, 이건 R2DBC로 할 수 없음. Flyway는 애플리케이션 시작 시 한 번만 실행되므로 JDBC로 충분.
+Flyway는 R2DBC를 지원하지 않는다. 그래서 **같은 DB에 접속 방식이 2개** 존재한다:
+
+```
+PostgreSQL (1개)
+    │
+    ├── JDBC 접속 (spring.flyway.url)     → Flyway가 마이그레이션 실행 (DDL)
+    │   jdbc:postgresql://localhost:5432/downtime
+    │
+    └── R2DBC 접속 (spring.r2dbc.url)     → 앱이 쿼리 실행 (DML, Non-blocking)
+        r2dbc:postgresql://localhost:5432/downtime
+```
+
+앱 시작 시 Flyway가 JDBC로 테이블을 만들고, 그 이후부터 앱 코드는 R2DBC로 Non-blocking 쿼리를 실행. 테스트(`AbstractIntegrationTest`)에서도 동일하게 `DynamicPropertySource`로 R2DBC + Flyway 접속 정보를 각각 설정한다.
 
 ### Q15. `Mono.from()`이 뭔가?
 jOOQ의 쿼리 결과는 `Publisher<T>` (Reactive Streams 표준). `Mono.from()`은 이를 Reactor의 `Mono`로 감싸는 것. 그 후 `.awaitSingleOrNull()`로 코루틴으로 전환.
