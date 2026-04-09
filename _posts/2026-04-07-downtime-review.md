@@ -1168,6 +1168,18 @@ webTestClient.post().uri("/api/downtimes")
     .expectStatus().isUnauthorized()
 ```
 
+### 8.5 놓치기 쉬운 포인트
+
+**컨테이너 공유:** `AbstractIntegrationTest`의 `companion object`에 컨테이너를 선언했으므로 JVM 안에서 **딱 1번만 생성**되어 모든 테스트 클래스가 공유한다. 테스트마다 새 컨테이너를 띄우지 않아 빠르지만, 테스트 간 **데이터가 격리되지 않는** 트레이드오프가 있다.
+
+**데이터 미격리:** `@BeforeEach`에서 데이터를 추가만 하고 삭제는 안 한다. `SearchTest`는 매 테스트마다 2건 추가 → 누적. 그래서 `hasSizeGreaterThanOrEqualTo(1)` 같은 **느슨한 검증**을 사용한다. Soft Delete 구조라 `DELETE FROM` 초기화도 까다로움.
+
+**`runBlocking` 패턴:** `suspend fun`을 JUnit에서 호출하려면 코루틴 스코프가 필요하다. ServiceTest에서 `fun `test`(): Unit = runBlocking { ... }` 패턴을 사용. ControllerTest는 `WebTestClient`가 알아서 처리하므로 불필요.
+
+**`JwtHelper` 직접 사용:** 운영에서는 Auth Server가 토큰을 발급하지만, 테스트에서는 `JwtHelper(objectMapper).generate(session)`으로 직접 JWT를 생성한다. `by lazy`로 최초 사용 시 1번만 초기화.
+
+**`@Suppress("NonAsciiCharacters")`:** Kotlin 백틱으로 한글 테스트 메서드명 사용 시 (`` `insert - 정상 생성`() ``) non-ASCII 경고가 발생하므로 Suppress로 제거.
+
 ---
 
 ## 9. 핵심 패턴 & 기법 정리
