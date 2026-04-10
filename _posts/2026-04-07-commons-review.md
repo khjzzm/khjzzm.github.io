@@ -402,11 +402,13 @@ HTTP 요청 (KSESSIONID 쿠키/헤더 or JWT 토큰)
 
 세 가지는 **같은 Session을 다른 방식으로 전달하는 경로**이며, 먼저 찾은 걸 사용한다 (쿠키에 있으면 JWT는 안 봄):
 
-| 우선순위 | 경로 | 전달 방식 | 사용 환경 |
+| 우선순위 | 경로 | 전달 방식 | 누가 보내나 |
 |:---:|------|-----------|-----------|
-| 1 | 쿠키 (`KSESSIONID`) | AES 암호화된 Session JSON | 브라우저(웹) — 쿠키에 세션 저장이 자연스러움 |
-| 2 | 헤더 (`KSESSIONID`) | AES 암호화된 Session JSON | MSA 간 내부 호출 — HTTP 헤더로 전달이 편함 |
-| 3 | JWT (`Authorization: Bearer ...`) | JWT claims 안에 Session JSON | OAuth2 인증 흐름 — Auth Server가 JWT로 발급 |
+| 1 | 쿠키 (`KSESSIONID`) | AES 암호화된 Session JSON | 브라우저 또는 **ApiClient** (쿠키+헤더 동시 전송) |
+| 2 | 헤더 (`KSESSIONID`) | AES 암호화된 Session JSON | **ApiClient** (쿠키와 동시 전송, 쿠키 실패 시 폴백) |
+| 3 | JWT (`Authorization: Bearer ...`) | JWT claims 안에 Session JSON | Auth Server가 발급한 토큰 |
+
+> **참고:** `ApiClient`(MSA 간 내부 호출)는 쿠키와 헤더에 **동시에** 암호화된 세션을 보낸다. 수신 측에서는 1순위인 쿠키에서 먼저 찾게 되고, 프록시 등으로 쿠키를 못 읽는 경우 2순위 헤더에서 찾는다.
 
 ```
 경로 1, 2: Session을 AES로 암호화해서 직접 전달 (JWT 안 씀)
