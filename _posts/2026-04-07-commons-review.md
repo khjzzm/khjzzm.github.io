@@ -1185,6 +1185,8 @@ class ApiClientException(
 | 반환 타입 | `ResponseEntity\<T\>` | `Mono\<T\>` |
 | 필터 순서 | `InterceptorRegistry` 등록 순서 | `@Order` 어노테이션 |
 
+**필터 순서 제어 방식이 다른 이유:** Servlet의 Interceptor는 `CommonsWebAutoConfiguration` 한 곳에서 `registry.addInterceptor()`로 순서대로 등록하므로 **코드 순서 = 실행 순서**. Reactive의 WebFilter는 각각 독립 `@Bean`으로 등록되어 Spring이 어떤 순서로 Bean을 생성할지 보장되지 않으므로, 각 클래스에 `@Order`를 명시적으로 붙여야 한다.
+
 ### 5.3 필터 실행 순서
 
 **Servlet:**
