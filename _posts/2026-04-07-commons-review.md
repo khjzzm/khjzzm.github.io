@@ -904,10 +904,24 @@ http
 | `AccessDeniedException` | FORBIDDEN | 403 |
 | `Exception` (기타) | INTERNAL_SERVER_ERROR | 500 |
 
-**Reactive 추가 구성:**
-- `BusinessExceptionWebExceptionHandler` (WebExceptionHandler): 필터 레벨에서 발생하는 BusinessException 처리
+**Reactive에만 추가 구성이 필요한 이유:**
+
+```
+MVC:     Filter → DispatcherServlet → [Interceptor → Controller] → @RestControllerAdvice
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^
+                                       이 범위 안의 예외는 전부 잡힘 (Interceptor 포함)
+
+WebFlux: [WebFilter] → DispatcherHandler → [Controller] → @RestControllerAdvice
+         ^^^^^^^^^^                         ^^^^^^^^^^^^
+         여기 예외는 못 잡힘                   여기 예외만 잡힘
+         → WebExceptionHandler 필요
+```
+
+MVC의 `HandlerInterceptor`에서 던진 예외는 `DispatcherServlet`이 `@RestControllerAdvice`로 전달해준다. 하지만 WebFlux의 `WebFilter`는 `DispatcherHandler` **바깥에서** 동작하므로 예외가 `@RestControllerAdvice`에 도달하지 않는다.
+
+- `BusinessExceptionWebExceptionHandler` (WebExceptionHandler): WebFilter 단계의 BusinessException 처리
   - `@Order(Ordered.HIGHEST_PRECEDENCE)`로 최우선 순위
-  - 필터에서 throw된 예외는 `@RestControllerAdvice`에 도달하지 않으므로 별도 WebExceptionHandler 필요
+  - 예: `RequireSessionFilter`에서 세션 없으면 throw → 이 핸들러가 잡아서 401 응답
 
 #### GlobalBinderAdvice (Servlet 전용)
 ```kotlin
