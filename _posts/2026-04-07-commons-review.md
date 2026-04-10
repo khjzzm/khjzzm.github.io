@@ -1038,7 +1038,7 @@ class ApiClient(
 | `put\<T\>(path, body, session?)` | PUT 요청 |
 | `delete\<T\>(path, session?)` | DELETE 요청 |
 
-- **모든 메서드는 `inline` + `reified`** → 제네릭 타입 정보 유지, 런타임에 타입 소거 없음. `reified` 없으면 매번 `Class<T>`를 수동으로 넘겨야 하지만(`client.get("/url", Downtime::class.java)`), `reified`가 있으면 타입만 지정하면 끝(`client.get<Downtime>("/url")`). `inline`은 함수 본문을 호출 지점에 복사하면서 `T`를 실제 타입으로 치환하기 때문에 `reified`와 세트로 사용
+- **모든 메서드는 `inline` + `reified`** → 제네릭 타입 정보 유지, 런타임에 타입 소거 없음. `reified` 없으면 매번 `Class<T>`를 수동으로 넘겨야 하지만(`client.get("/url", Downtime::class.java)`), `reified`가 있으면 타입만 지정하면 끝(`client.get<Downtime>("/url")`). `inline`은 함수 본문을 호출 지점에 **복사**하면서 `T`를 실제 타입으로 치환하기 때문에 `reified`와 세트로 사용. 복사 방식이므로 컴파일된 바이트코드 크기는 호출 횟수만큼 늘어나지만, ApiClient 메서드가 짧고(각 10줄 이내) 호출 횟수도 MSA당 몇 개 수준이라 실질적 문제 없음
 
 #### 인증 흐름
 ```
