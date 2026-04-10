@@ -997,6 +997,27 @@ com.knet.commons.web.server.reactive.config.CommonsReactiveSecurityAutoConfigura
 >
 > 마이크로서비스 간 API 호출 표준 클라이언트
 
+**파일별 한줄 요약:**
+
+| 파일 | 역할 |
+|------|------|
+| `ApiClientProperties` | `api.client.connect-timeout`, `read-timeout` 설정 읽기 |
+| `CommonsClientConfig` | RestClient Bean 생성 (타임아웃 + OAuth2 인터셉터 + 에러 핸들러 등록) |
+| `ApiClient` | 실제 API 호출 (get/post/put/delete 4개 메서드, Session 암호화 전달) |
+| `ApiClientErrorHandler` | 에러 응답 JSON → `ApiClientException`으로 변환 |
+| `ApiClientException` | 원격 API 에러를 담는 예외 클래스 |
+
+**호출 흐름:**
+```
+ApiClient.get<Downtime>("/api/downtimes/1", session)
+    → CommonsClientConfig가 만든 RestClient 사용
+    → OAuth2 토큰 자동 획득 (Authorization: Bearer)
+    → Session을 AES 암호화해서 KSESSIONID 쿠키+헤더에 추가
+    → 요청 전송
+    → 성공: JSON → Downtime 객체 반환
+    → 실패: ApiClientErrorHandler → ApiClientException 발생
+```
+
 ### 4.1 ApiClient
 
 ```kotlin
