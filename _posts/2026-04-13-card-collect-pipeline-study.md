@@ -544,6 +544,126 @@ Quartz 트리거 (cron 주기 도래)
 
 **핵심 포인트**: `cards` 는 읽기만, 외부 API 호출은 안 함. 단순히 "다시 수집할 카드를 큐에 적재" 만 한다. 최초 수집용이 아니라 **반복 수집의 엔진** 역할.
 
+#### 이 SQL 이 EnqueueJob 의 "유일한 규칙" 이다 — 쿼리 해부
+
+이 한 개의 쿼리가 **카드 상태 전이 로직 전체** 를 담고 있다. "누가 수집 대상이고 누가 아닌지" 의 비즈니스 규칙은 이 SQL 바깥 어디에도 없다. 세 개의 OR 절을 하나씩 해부해보자.
+
+##### 절 (1) — `collect_status IN ('STANDBY', 'SUCCESS')`
+
+```sql
+WHERE (A.collect_status IN ('STANDBY', 'SUCCESS'))
+```
+
+가장 단순한 절. 두 상태를 **조건 없이 무조건 픽업**.
+
+| 상태 | 의미 | 언제 이 상태가 되나 |
+|------|------|--------------------|
+| `STANDBY` | 대기 상태 | 등록 직후 / 복구 직후 / 수동 리셋 |
+| `SUCCESS` | 지난 수집 성공 | 수집 성공 직후 |
+
+이 두 상태는 **"계속 돌려야 하는 카드"** 라서 추가 필터가 필요 없다.
+
+##### 절 (2) — `FAILURE + latest_is_permanent_err = FALSE`
+
+```sql
+OR (A.collect_status = 'FAILURE' AND A.latest_is_permanent_err = FALSE)
+```
+
+**일시 실패** 건만 재시도. **영구 실패** (비밀번호 오류 같은 "고쳐지지 않는 에러") 는 `latest_is_permanent_err = TRUE` 로 저장되어 있어서 이 절에 걸리지 않는다. 즉
+
+- `FAILURE` + `permanent=FALSE` → ✅ 다음 주기 재시도
+- `FAILURE` + `permanent=TRUE` → ❌ **사용자가 수정할 때까지 영원히 픽업 안 함**
+
+사용자가 `modifyCard` 로 비밀번호를 갱신하면 그때 상태가 리셋되어 다시 이 쿼리에 걸리게 된다.
+
+##### 절 (3) — `STOP + 오늘 정지 이력` (가장 교묘한 절)
+
+```sql
+LEFT JOIN collect_logs B
+       ON A.card_seq = B.card_seq
+      AND B.collect_status = 'STOP'
+      AND B.do_dt::DATE = CURRENT_DATE   -- ⭐ 오늘 정지된 이력만
+WHERE ...
+   OR (A.collect_status = 'STOP' AND B.collect_log_seq IS NOT NULL)
+```
+
+`collect_logs` 와 LEFT JOIN 해서 **"오늘 날짜에 STOP 이벤트가 기록된 row"** 를 찾아온다. 그 JOIN 이 성공하면 `B.collect_log_seq IS NOT NULL` 이 되어 절 (3) 이 true.
+
+| 상태 | JOIN 결과 | 절 (3) 결과 |
+|------|----------|------------|
+| STOP + **오늘** 정지된 이력 있음 | 성공 (B row 존재) | ✅ 픽업 |
+| STOP + **어제 이전** 정지된 이력 | 실패 (JOIN 매칭 없음, B 는 NULL) | ❌ 픽업 안 함 |
+
+→ 즉 **"오늘 정지된 카드에만 하루 유예"** 를 주는 로직. 어제 정지된 카드는 JOIN 매칭 실패로 건너뛴다. 이 유예가 있는 이유는 **"정지 직전까지의 데이터를 마지막으로 한 번 더 확보"** 하기 위해서.
+
+##### LEFT JOIN 을 쓰는 이유 — 절 (1), (2) 를 살리기 위해
+
+LEFT JOIN 대신 INNER JOIN 을 쓰면 어떻게 될까?
+
+```sql
+-- ❌ 잘못된 형태
+INNER JOIN collect_logs B ON A.card_seq = B.card_seq AND B.collect_status = 'STOP' AND ...
+```
+
+이러면 **STANDBY / SUCCESS / FAILURE 상태 카드가 전부 제외** 된다. 이들은 collect_logs 에 오늘 STOP 이력이 없으니까 INNER JOIN 에서 걸러짐.
+
+LEFT JOIN 을 쓰면 JOIN 매칭이 실패해도 A 쪽 row 는 살아남아요. `B.*` 는 NULL 이 되지만 WHERE 절 (1), (2) 는 B 를 참조하지 않으므로 영향 없음. 절 (3) 만 `B.collect_log_seq IS NOT NULL` 로 JOIN 성공 여부를 체크.
+
+##### `do_dt::DATE = CURRENT_DATE` 를 JOIN 조건에 넣은 이유
+
+이 조건을 WHERE 절로 빼면 LEFT JOIN 이 INNER JOIN 처럼 퇴화해버린다 — JOIN 결과가 NULL 인 row 는 WHERE 에서 떨어지기 때문. 그래서 **JOIN 조건 안에** 넣어서 "JOIN 은 LEFT 성격 유지, 날짜 필터는 매칭 단계에서 적용" 하는 구조.
+
+SQL 을 작성할 때 흔히 빠지는 함정이라 알아두면 좋다. "LEFT JOIN + 우측 테이블 컬럼 필터" 는 거의 항상 **JOIN ON 절 안** 으로 넣어야 한다.
+
+##### 5가지 카드 상태의 픽업 여부 한눈에
+
+이 쿼리를 5가지 케이스로 풀어보면
+
+| `collect_status` | 추가 조건 | 픽업? | 이유 |
+|---|---|---|---|
+| `STANDBY` | — | ✅ | 등록/복구 직후의 "처음 수집" 대상 |
+| `SUCCESS` | — | ✅ | 정기 재수집 대상 |
+| `FAILURE` | `latest_is_permanent_err = FALSE` | ✅ | 일시 오류 재시도 |
+| `FAILURE` | `latest_is_permanent_err = TRUE` | ❌ | **영구 오류** — 사용자 수정 대기 |
+| `STOP` | 오늘 정지된 이력 있음 | ✅ | 정지 직전까지 마지막 수집 |
+| `STOP` | 오늘 정지된 이력 없음 | ❌ | 과거에 정지된 카드 — 복구 대기 |
+
+##### 픽업 안 되는 카드는 어떻게 다시 활성화되나
+
+WHERE 절에 안 걸리는 카드는 EnqueueJob 이 영원히 모르는 척한다. 이런 카드를 다시 수집 대상으로 만들려면 **사용자 액션** 이 필요하다.
+
+- **영구 실패 카드** → `modifyCard(web_pwd)` 등으로 수정 → `collect()` 직접 호출 경로로 복귀
+- **어제 이전 정지된 카드** → `recoverCards()` → `collect_status = STANDBY` + `collect()` 직접 호출
+
+이게 앞서 5.1 에서 설명한 **"사용자 액션 = 관찰 가능한 상태 변화"** 원칙과 직결된다. EnqueueJob 에서 배제된 카드도 API 의 `collect()` 직접 호출 경로로 다시 파이프라인에 진입할 수 있다.
+
+##### ORDER BY — 픽업 순서의 의미
+
+```sql
+ORDER BY CASE A.collect_status
+           WHEN 'STANDBY' THEN 2
+           WHEN 'FAILURE' THEN 1
+           ELSE 0
+         END DESC,
+         A.card_seq
+```
+
+DESC 라서 **CASE 값이 큰 것부터** 나온다.
+
+| CASE 값 | 상태 | 순위 |
+|---|---|---|
+| 2 | STANDBY | 🥇 1순위 |
+| 1 | FAILURE (일시) | 🥈 2순위 |
+| 0 | SUCCESS, STOP (오늘) | 🥉 3순위 (card_seq 오름차순) |
+
+**왜 STANDBY 가 1순위?** — 등록/복구 직후의 카드를 빨리 처리해서 사용자 체감 지연을 줄이기 위해. "등록했는데 데이터 없어요" 상태를 최소화.
+
+**왜 FAILURE 가 2순위?** — 실패 상태는 빨리 재시도해서 "복구 가능한지" 확인. SUCCESS 보다 급함.
+
+##### 쿼리 한 줄 요약
+
+> **이 SQL 의 WHERE 절 = EnqueueJob 의 "누구를 수집할지" 규칙 전체**. 카드가 이 세 개 OR 절 중 하나에 걸리지 않으면 EnqueueJob 은 그 카드를 영원히 모르는 척한다. 이 쿼리 바깥에는 추가 필터가 없다 — 카드 상태 전이 로직을 이해하려면 이 쿼리 하나만 잘 읽으면 된다.
+
 #### 시나리오로 따라가기 — 카드 여러 장이 큐에 들어가는 과정
 
 추상 설명만으로는 감이 잘 안 오니까 실제 데이터로 한 번 돌려본다.
