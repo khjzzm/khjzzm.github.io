@@ -1184,9 +1184,85 @@ UPDATE approval_histories
 
 이 seq 주입이 **이력 연속성** 의 핵심이다. DELETE + INSERT 로 처리하면 seq 가 바뀌어 외부 시스템 참조가 깨지지만, 기존 seq 유지 UPDATE 는 감사 로그와 외부 참조를 모두 보존.
 
+###### 잠깐 — `equalsAll` 이 `true` 인데 휴폐업 정보가 NULL 일 수 있는 이유 🎯
+
+5가지 분기를 보기 전에 **이 코드의 가장 혼란스러운 부분** 을 먼저 짚고 가자. 아래 로직을 처음 보면 모순처럼 느껴진다.
+
+```java
+if (temp.equalsAll(matched)) {                              // 전체 필드가 같은데
+    if (matched.getStoreCompanyType() == null || ...) {     // 어? 휴폐업이 NULL?
+        temp.setCompareResult(STORE_TAX_TYPE_IS_NULL);
+    }
+    ...
+}
+```
+
+`equalsAll == true` 라면 "완전히 똑같은 데이터" 여야 하는데, 그 다음 줄에서 `storeCompanyType == null` 체크를 하고 있다. **동일하면 NULL 일 수가 없어야 하는 것 아닌가?**
+
+답은 **"`equalsAll` 은 `storeCompanyType` / `storeCompanyTaxType` 을 일부러 비교하지 않는다"** 는 것. `ApprovalHistory.equalsAll()` 구현을 보면 22개 필드를 비교하는데, 이 두 필드는 **명시적으로 제외** 되어 있다.
+
+**왜 제외했나?** 이 두 필드는 **외부 스크래핑 API 가 아닌 별도의 사내 휴폐업 조회 API** 에서 오기 때문.
+
+```
+┌──────────────────────────────────────┐
+│ 외부 스크래핑 API (벤더)                   │
+│ → cardName, approvalNum, 금액, storeName,│
+│   storeBizId, ... (22개 필드)           │
+│                                        │
+│ ❌ storeCompanyType 은 안 돌려줌          │
+│ ❌ storeCompanyTaxType 도 안 돌려줌       │
+└──────────────────────────────────────┘
+               ↓
+             temp 객체
+               ↓
+     storeCompanyType = null  ← temp 는 항상 이렇게 들어옴!
+
+┌──────────────────────────────────────┐
+│ 사내 휴폐업 조회 API                       │
+│ → CompanyType, CompanyTaxType         │
+└──────────────────────────────────────┘
+               ↓
+        Writer 4 가 별도로 호출
+               ↓
+     이 값이 성공적으로 받아지면 DB 에 저장됨
+     (실패하거나 조회 대상 아니면 NULL 로 남음)
+```
+
+즉 `temp` 는 Compare 로직에 들어오는 시점에 **항상 `storeCompanyType = null`**. 그리고 `matched` (본 테이블 row) 는 **과거 Writer 4 가 성공적으로 채워 넣었다면 값이 있고, 실패했다면 NULL**.
+
+**만약 `equalsAll` 이 이 두 필드를 포함했다면?** 재앙이 일어난다.
+
+- `temp.storeCompanyType = null`
+- `matched.storeCompanyType = GENERAL_COMPANY` (과거에 채워진 값)
+- `Objects.equals(null, GENERAL_COMPANY)` = **false**
+- `equalsAll()` 결과 **false**
+- 완전 동일한 데이터인데 매번 `UPDATED` 로 잘못 분류됨
+- 매 수집마다 본 테이블 전체 UPDATE → DB 부하 폭발
+- UPDATE 할 때 `temp.storeCompanyType = null` 로 덮어씀 → **기존 휴폐업 정보 전멸**
+- 다음 수집에서 Writer 4 가 다시 조회 → 외부 API 비용 낭비
+- → **무한 재조회 루프**
+
+설계자가 의도적으로 이 두 필드를 제외한 이유다. 즉 `equalsAll` 은 이름과 달리 **"모든 필드"** 가 아니라 **"외부 스크래핑 API 출처 필드만 모두"** 비교한다. 더 정확한 이름을 붙이자면 `equalsExceptClosedInfo` 정도가 어울렸을 것.
+
+**그럼 `matched.storeCompanyType == null` 체크의 진짜 의미는?** 이렇게 읽어야 한다.
+
+1. `temp.equalsAll(matched) == true` → "**외부 API 에서 온 데이터는** 기존 DB 와 같다"
+2. `matched.storeCompanyType == null` → "**과거에 휴폐업 정보를 못 채운 건이네 → 이번 기회에 보강해야겠다**"
+3. → `STORE_TAX_TYPE_IS_NULL` 분류 → Writer 4 가 휴폐업 API 호출로 복구
+
+이게 **점진적 백필 / 재시도 메커니즘** 이다. 한 번 실패한 휴폐업 조회를 다음 수집 주기에 자동으로 재시도해서 언젠가 완전한 데이터가 되도록 만드는 장치.
+
+**실제로 언제 `matched.storeCompanyType` 이 NULL 일 수 있나?**
+
+- **과거 Writer 4 호출 실패** — 휴폐업 API 일시 장애로 그때 NULL 로 저장됨
+- **`storeBizId` 가 10자리 숫자 아니었음** — Writer 4 의 필터 조건에서 제외되어 조회 안 했음
+- **레거시 데이터** — 휴폐업 컬럼이 서비스에 뒤늦게 추가됐다면, 그 전에 저장된 모든 row 는 NULL
+
+이 모든 케이스가 `STORE_TAX_TYPE_IS_NULL` 분류를 통해 **수집 주기마다 조금씩 복구** 된다. 이해하고 나면 감탄스러운 설계인데, 이름이 `equalsAll` 인 게 함정이라 처음 읽을 때 혼란스러운 부분.
+
 ###### 매칭 성공 시 — 5가지 세부 분기
 
-공통 준비가 끝나면 `equalsAll` (전체 필드 비교) 를 기준으로 트리 분기가 시작된다.
+공통 준비가 끝나면 `equalsAll` (외부 API 출처 필드만 전체 비교) 를 기준으로 트리 분기가 시작된다.
 
 **분기 1 — 전체 동일 + 휴폐업 NULL → `STORE_TAX_TYPE_IS_NULL`**
 
