@@ -391,6 +391,120 @@ POST /api/cards
 
 등록 직후 `approval_histories` 등 히스토리 테이블은 아직 비어 있다. 실제 수집은 다음 CollectJob 트리거 시점에 일어남.
 
+##### 수정 / 정지 / 복구 시나리오 — 언제 `collect()` 가 호출되나
+
+등록 외의 3가지 카드 라이프사이클 이벤트 (수정/정지/복구) 도 비슷한 패턴으로 큐에 진입한다. 언제 수집이 재실행되는지는 상황마다 다르다.
+
+**수정 (Modify)**
+
+```java
+@Transactional
+public Card modifyCard(Session session, int cardSeq, CardModifyDto dto) {
+    Card card = getCard(cardSeq);
+    boolean needCollect = card.modify(session, dto);  // 변경된 필드가 뭔지 판단
+    cardApiMapper.modifyCard(card);
+    cardApiMapper.registerCardLog(...);
+
+    if (needCollect) {
+        collect(CollectDto.of(card.getCardSeq()));  // ⚡ 조건부 재수집
+    }
+    return card;
+}
+```
+
+- **`needCollect=true` 일 때만** `collect()` 호출 — **수집에 영향 있는 필드** (카드번호/`web_id`/`web_pwd` 등) 가 바뀌었을 때
+- **`needCollect=false` 일 때** `collect()` 호출 안 함 — `alias`/`usage`/`memo` 같은 표시용 필드만 바뀐 경우
+
+> **대표 시나리오**: 카드사 홈페이지 비밀번호가 만료돼서 수집이 계속 실패하던 카드 (`latest_is_permanent_err=TRUE`) 를 사용자가 새 비번으로 수정. 수정 순간 `needCollect=true` → `collect()` → 즉시 수집 큐 진입 → 다음 CollectJob 주기에 새 비번으로 재시도 → 성공 시 `collect_status` 가 `SUCCESS` 로 복귀. **즉 카드가 "다시 살아남"**.
+
+**정지 (Stop)**
+
+```java
+@Transactional
+public Map<Integer, Boolean> stopCards(Session session, List<Integer> cardSeqs) {
+    for (Integer cardSeq : cardSeqs) {
+        Card card = getCard(cardSeq);
+        if (card == null || card.getCollectStatus().equals(STOP)) continue;
+
+        card.stop();
+        cardApiMapper.stopCard(cardSeq);
+        cardApiMapper.registerCollectLog(...);
+        // ⚠ collect() 호출 없음
+    }
+}
+```
+
+- **`collect()` 호출 안 함** — 수집을 "멈추는" 게 목적이므로 새 큐 진입 없음
+- 그런데 완전히 조용한 건 아니다. **EnqueueJob 이 "오늘 정지된 카드" 조건에 걸려서 마지막으로 한 번 더 수집**한다 (5.2 섹션 시나리오 참고). "정지 직전까지의 데이터" 를 확보하려는 배려
+
+> **대표 시나리오**: 사용자가 "이 카드 당분간 수집 끄고 싶어요" 또는 "이 카드 교체했어요, 기존 건 정지" 같은 요청. 정지 API 호출 → 그날 하루는 마지막 수집 → 그 이후로는 EnqueueJob 이 제외 → 완전히 조용해짐
+
+**복구 (Recover)**
+
+```java
+@Transactional
+public Map<Integer, Boolean> recoverCards(Session session, List<Integer> cardSeqs) {
+    for (Integer cardSeq : cardSeqs) {
+        Card card = getCard(cardSeq);
+        if (card == null || !card.getCollectStatus().equals(STOP)) continue;
+
+        card.recover();
+        cardApiMapper.recoverCard(cardSeq);
+        cardApiMapper.registerCollectLog(...);
+
+        // ⭐ 수집큐 등록 — 복구는 항상 즉시 수집 호출
+        collect(CollectDto.of(card.getCardSeq()));
+    }
+}
+```
+
+- **정지(STOP) 상태인 카드만** 복구 가능. 그 외 상태에서는 early skip
+- **항상 `collect()` 호출** — 정지 기간 동안 누락된 거래내역을 **공백 메꾸기(gap filling)** 하려는 것
+- 복구 후 `collect_status` 는 `STANDBY` 로 돌아가고, EnqueueJob 의 1순위 우선순위에 걸려서 재수집이 빠르게 돌아감
+
+> **대표 시나리오**: Day 1 에 "당분간 수집 끄기" 로 정지 → Day 10 에 사용자가 "다시 켜야겠다" 며 복구 → 복구 즉시 `collect_queues` 에 큐 적재 → 다음 CollectJob 주기에 외부 API 호출 → **Day 2~Day 10 사이의 거래내역 8일치를 한 번에 끌어옴**. 정지 기간 동안의 데이터 공백이 이렇게 메워진다.
+
+##### 4가지 이벤트 — `collect()` 호출 여부 비교
+
+| 이벤트 | `collect()` 호출? | 이유 |
+|------|-------------------|------|
+| **등록** (`registerCard`) | ✅ **항상** | 신규 카드라 아직 `approval_histories` 에 데이터 0건. 즉시 수집 필요 |
+| **수정** (`modifyCard`) | ⚠️ **`needCollect=true` 일 때만** | 수집에 영향 있는 필드 (카드번호/`web_id`/`web_pwd` 등) 변경일 때만. `alias`/`memo` 같은 표시용 필드만 바뀌면 재수집 불필요 |
+| **복구** (`recoverCards`) | ✅ **항상** | 정지 기간 동안 누락된 거래내역이 있을 수 있어서 무조건 즉시 수집 |
+| **정지** (`stopCards`) | ❌ **호출 안 함** | 정지 = 수집 중지가 목적. 단 EnqueueJob 이 "오늘 정지된 카드" 조건으로 마지막 한 번만 수집해줌 |
+
+##### 왜 복구는 "즉시 수집" 이 필요한가 — 데이터 공백 문제
+
+정지/복구는 본질적으로 **데이터 타임라인에 구멍을 뚫는** 작업이다.
+
+```
+approval_histories (card 102)
+├─ 2026-03-01 ~ 2026-04-05  (정지 전 수집 데이터 ✅)
+│
+├─ 2026-04-05 ~ 2026-04-15  ❌ 공백! (정지 기간 — 여기 거래는 DB 에 없음)
+│
+└─ (복구 직후) 수집 필요
+```
+
+만약 복구만 하고 `collect()` 를 호출 안 한다면
+
+- **나쁜 옵션 1**: 다음 EnqueueJob 주기까지 대기 → 사용자는 "복구했는데 왜 데이터 없어?" 당황
+- **나쁜 옵션 2**: 사용자가 별도로 "수동 수집" 버튼을 또 눌러야 함 → UX 나쁨
+
+그래서 **복구 API 가 내부에서 알아서 `collect()` 를 호출**해서, 사용자는 버튼 한 번만 눌러도 "복구 + 즉시 수집" 이 원자적으로 일어나게 만들었다. `registerCard()` 가 등록 + 큐 진입을 같은 트랜잭션에 묶은 것과 같은 철학이다.
+
+##### 설계 원칙 — "사용자 액션 = 관찰 가능한 상태 변화"
+
+위 4가지 이벤트를 종합하면 하나의 원칙이 보인다.
+
+> **"사용자가 API 를 호출한 순간, 관찰 가능한 상태 변화가 즉시 일어나야 한다."**
+
+- 등록 했는데 데이터 없음? ❌ 안 됨 → 등록 시 즉시 수집
+- 비번 수정했는데 여전히 실패 상태? ❌ 안 됨 → 수정 시 즉시 수집
+- 복구했는데 공백 기간 데이터 없음? ❌ 안 됨 → 복구 시 즉시 수집
+
+이 모든 "즉시성 보장" 이 `registerCard/modifyCard/recoverCards` API 가 **트랜잭션 안에서 직접 `collect_queues` 에 INSERT** 하는 설계로 실현된다. 스케줄러의 주기적 동작에만 맡겼다면 지연이 생기고, 사용자가 "왜 안 되지?" 하고 기다리는 나쁜 UX 가 됐을 것이다.
+
 ### 5.2 ② EnqueueJob (card-scheduler) — 최초 수집용이 아니라 "재수집용"
 
 주기적으로 실행되지만, **이 Job 이 다루는 건 이미 한 번 수집이 돈 카드** 다. 신규 등록 카드는 앞 5.1 단계에서 이미 큐에 들어갔으므로 여기서 또 처리하지 않는다.
@@ -568,13 +682,13 @@ collect_queues 에서 "지금 처리 가능한 것":
 
 ##### 이 시나리오에서 배울 점
 
-| 관찰 | 왜 중요한가 |
-|---|---|
-| **card 104 (영구 실패) 는 큐에 안 들어감** | 비밀번호 오류 같은 "고쳐지지 않는 실패" 는 계속 돌릴수록 낭비. 사용자가 카드 수정하면 `collect_status` 가 리셋되어 다시 대상이 됨 |
-| **card 105 (어제 정지) 는 제외, 106 (오늘 정지) 은 포함** | "정지된 카드" 를 영원히 재수집하면 안 되지만, **오늘 정지된 건 정지 시점까지의 데이터를 마지막으로 확보** 해야 함. LEFT JOIN + `do_dt::DATE = CURRENT_DATE` 로 하루 유예 |
-| **STANDBY 카드가 우선순위 2로 먼저** | 사용자 체감 속도. 등록 직후 "데이터가 안 보여요" 시간을 최소화 |
-| **점검 중이어도 큐에 들어감** | 큐에는 들어가되 `collect_dt` 를 미래로 설정해 지연 스케줄링. CollectJob 이 알아서 시간 되면 집어감 |
-| **EnqueueJob 은 `cards` 상태를 바꾸지 않음** | 순수하게 큐에 "복사본을 꽂는" 역할. 상태 변경은 CollectJob 담당 |
+| 관찰                                            | 왜 중요한가 |
+|-----------------------------------------------|---|
+| **card 104 (영구 실패) 는 큐에 안 들어감**               | 비밀번호 오류 같은 "고쳐지지 않는 실패" 는 계속 돌릴수록 낭비. 사용자가 카드 수정하면 `collect_status` 가 리셋되어 다시 대상이 됨 |
+| **card 105 (어제 정지) 는 제외, 106 (오늘 정지) 은 포함**   | "정지된 카드" 를 영원히 재수집하면 안 되지만, **오늘 정지된 건 정지 시점까지의 데이터를 마지막으로 확보** 해야 함. LEFT JOIN + `do_dt::DATE = CURRENT_DATE` 로 하루 유예 |
+| **STANDBY 카드가 최우선순위**                      | 사용자 체감 속도. 등록 직후 "데이터가 안 보여요" 시간을 최소화 |
+| **점검 중이어도 큐에 들어감**                            | 큐에는 들어가되 `collect_dt` 를 미래로 설정해 지연 스케줄링. CollectJob 이 알아서 시간 되면 집어감 |
+| **EnqueueJob 은 `cards` 상태를 바꾸지 않음**           | 순수하게 큐에 "복사본을 꽂는" 역할. 상태 변경은 CollectJob 담당 |
 | **`collect_queues.collect_dt` 컬럼이 지연 제어의 핵심** | insert_dt (큐에 넣은 시각) 와 collect_dt (수집 가능한 시각) 가 분리되어 있어서 "미래에 수집할 것" 을 현재에 미리 등록 가능 |
 
 ### 5.3 ③ CollectJob (card-scheduler) — 핵심
@@ -626,6 +740,8 @@ Quartz 트리거
 
 ##### Step 0 — Reader + Processor
 
+**역할**: Reader 가 `collect_queues` 에서 처리할 row 한 건을 꺼내 JOIN 으로 카드의 인증정보까지 함께 가져오고, Processor 가 이를 `CollectResult` 빈 컨테이너로 감싸서 writer 체인이 상태를 채워갈 준비를 한다. 이 시점에 `collectStartDT` 가 고정되어 이후 소요시간 계산의 기준점이 된다.
+
 ```
 Reader   : collect_queues 3003 (card 102 COMPANY_B PERSONAL)
            + JOIN cards 로 web_id, web_pwd, card_num 등 획득
@@ -635,14 +751,16 @@ Processor: CollectResult.of(appName, collectQueue)
 
 ##### Step 1 — Writer 1: 큐 락
 
+**역할**: 병렬 스레드나 다른 CollectJob 인스턴스가 같은 큐 아이템을 **중복 처리하지 못하도록** `in_progress=true` 로 락을 건다. 이 Writer 가 성공해야 이후 모든 Writer 가 이 카드를 "내 것" 으로 작업할 수 있다.
+
 ```sql
 UPDATE collect_queues SET in_progress = true
  WHERE collect_queue_seq = 3003
 ```
 
-**왜?** 병렬 스레드나 다른 CollectJob 인스턴스가 동일 큐 아이템을 중복 처리하지 못하게 락 설정.
-
 ##### Step 2 — Writer 2: ⭐ 외부 API 호출 (핵심)
+
+**역할**: 이 Job 의 심장. 카드사 점검 체크 → 수집 기간을 카드사별 max 단위로 분할 → 각 구간마다 외부 API HTTP 호출 → 응답 누적 → 결과에 따라 `CollectResult` 의 상태를 `SUCCESS/FAILURE/DOWNTIME` 로 마킹. 실제 HTTP 호출이 일어나는 **유일한 지점** 이다.
 
 ```java
 // [1] 점검 체크
@@ -685,10 +803,14 @@ collectResult.success(periodPartitions.size=1, scrapingStartDT, now, 3건);
 
 ##### Step 3 — Writer 3: DowntimeReEnqueue
 
+**역할**: 카드사가 점검 중일 때만 실행. 점검 종료 시각 이후로 `collect_dt` 를 미룬 **새 큐 row 를 하나 더 INSERT** 해서 "나중에 다시 시도" 하도록 예약한다. 기존 큐 row 는 Writer 8 이 DELETE 로 정리.
+
 - **조건**: `status == DOWNTIME`
 - **현재 상태**: SUCCESS → **skip** (SQL 실행 안 됨)
 
 ##### Step 4 — Writer 4: InsertApprovalHistoryTemps
+
+**역할**: 외부 API 가 돌려준 거래 레코드들을 `approval_histories_temp` 임시 테이블에 저장한다. 본 테이블에 바로 넣지 않고 버퍼를 거치는 이유는 **IntegrateJob 의 Compare 로직** 이 나중에 "기존 데이터 vs 새 데이터" 를 비교해야 하기 때문. 성공일 때만 실행.
 
 - **조건**: `status == SUCCESS` → **실행**
 
@@ -706,6 +828,8 @@ INSERT INTO approval_histories_temp (
 
 ##### Step 5 — Writer 5: InsertIntegrateQueue
 
+**역할**: `integrate_queues` 에 "이 collect_queue_seq 의 temp 데이터를 통합해 주세요" 라는 **신호 row** 를 INSERT 한다. 다음 단계인 IntegrateJob 을 깨우는 **문 두드리기** 역할. 성공일 때만 실행.
+
 - **조건**: `status == SUCCESS` → **실행**
 
 ```sql
@@ -718,6 +842,8 @@ INSERT INTO integrate_queues (
 ```
 
 ##### Step 6 — Writer 6: UpdateCollectStatus
+
+**역할**: `cards` 테이블의 `collect_status` 와 `latest_*` **비정규화 캐시 컬럼** 들을 이번 수집 결과로 갱신한다. 카드 리스트 화면에서 JOIN 없이 "최근 수집 상태" 를 즉시 보여주기 위한 것. 성공/실패 모두 실행 (점검은 상태 변경 없음).
 
 - **조건**: `status == SUCCESS or FAILURE` → **실행**
 
@@ -741,6 +867,8 @@ UPDATE cards
 
 ##### Step 7 — Writer 7: RegisterCollectLog
 
+**역할**: `collect_logs` 에 이번 수집 실행의 **상세 이력** 을 한 줄 INSERT 한다. 성공/실패 여부, 에러 코드, 소요 시간, 수집 건수 등 감사·디버깅용 로그. Writer 6 의 `cards.latest_*` 갱신과 비교하면 **이쪽은 히스토리 누적**, 저쪽은 "최신 상태 캐시".
+
 - **조건**: `status == SUCCESS or FAILURE` → **실행**
 
 ```sql
@@ -760,6 +888,8 @@ INSERT INTO collect_logs (
 
 ##### Step 8 — Writer 8: DeleteCollectQueue
 
+**역할**: 수집이 "끝난" 것으로 판정된 큐 row 를 `collect_queues` 에서 **물리 삭제** 한다. 성공/점검 재큐/영구 오류/재시도 초과 네 가지 종료 케이스에서 실행. "더 이상 이 큐에 대해 할 일 없음" 을 DB 에 물리적으로 표현.
+
 - **조건**: `DOWNTIME or SUCCESS or (FAILURE + (영구 or 재시도초과))` → **실행** (SUCCESS)
 
 ```sql
@@ -768,9 +898,13 @@ DELETE FROM collect_queues WHERE collect_queue_seq = 3003;
 
 ##### Step 9 — Writer 9: Retry
 
+**역할**: 일시적 실패 (네트워크 오류 등) 일 때만 실행. 큐 row 를 지우지 않고 `try_count++`, `in_progress=false` 로 리셋해서 **다음 CollectJob 주기에 reader 가 다시 픽업** 하도록 만든다. Writer 8 과 정확히 **상보적** 이라 둘 중 하나만 실행된다.
+
 - **조건**: `FAILURE + 일시 + 재시도가능` → **skip** (SUCCESS)
 
 ##### Step 10 — Writer 10: Logger
+
+**역할**: 최종 결과를 상태별로 info/warn 레벨 로그 출력. 수집연기/수집성공/수집실패 각각 다른 포맷. DB 작업 없이 **순수 로깅** 만 담당해서 운영자가 실시간으로 파이프라인 상태를 추적할 수 있게 한다.
 
 ```
 INFO  수집성공 : collectQueueSeq=3003, cardSeq=102, cardNum=****-****-****-1234,
@@ -1294,6 +1428,56 @@ INFO  통합완료 : integrateQueueSeq=2001, cardSeq=102,
 | **writer 10·11 (건수 보정)** | CollectJob 시점에는 `collect_count=3` (수집된 건수) 만 알 수 있고, `register/update/delete_count` 는 IntegrateJob 이 끝나야 확정됨. 분산된 정보를 뒤늦게 이어붙이는 패턴 |
 | **temp DELETE 는 통합 완료 직후** | temp 는 버퍼이므로 보관 가치 없음. integrate_queues DELETE 와 같이 묶어서 "작업 끝났음" 을 물리적으로 표현 |
 | **더 복잡한 케이스는 6장 Day 2 참고** | 이 시나리오 (최초 수집) 는 Compare 의 Phase 3 cross-match 가 동작하지 않는다. 승인→취소 전환 같은 핵심 케이스는 6장 Day 2 시나리오에서 자세히 다룬다 |
+
+#### 왜 대량 처리는 50개씩 나누나 — 배치 사이즈 관례
+
+CollectJob (`InsertApprovalHistoryTemps`) 과 IntegrateJob (`DeleteRemoved` / `UpdateExisting` / `RegisterNew`) 모두 처리 대상을 **50개씩 파티션으로 쪼개서** 반복 처리한다. 왜 통째로 한 번에 INSERT/DELETE 하지 않고 50개씩 나눌까?
+
+##### 이유 1 — DB 드라이버의 기술적 한계
+
+한 번의 SQL 문에 담을 수 있는 데이터는 무한하지 않다.
+
+- **PostgreSQL 파라미터 상한** — 한 쿼리당 최대 65,535개 바인딩 파라미터. `approval_histories_temp` 는 컬럼이 약 30개라서, 이론상 2,000 row 근처에서 한계에 걸린다. 50 × 30 = 1,500 파라미터라 **한계의 2% 수준** 으로 매우 안전한 여유.
+- **SQL 문자열 크기** — MyBatis `<foreach>` 가 `INSERT ... VALUES (...), (...), ...` 형태로 거대한 문자열을 JVM heap 에 만드는데, N 이 크면 메모리 압박 발생. 50개면 SQL 문자열이 수 KB 수준.
+- **네트워크 패킷** — 작은 배치는 JDBC 드라이버의 전송 버퍼 (수십 KB) 안에 들어가서 왕복 지연이 적다.
+
+한 카드가 과거 6개월치를 한 번에 긁어오면 **수천 건**이 나올 수 있어서, 분할 없이 INSERT 하면 이 한계들에 부딪힌다.
+
+##### 이유 2 — 성능 균형점
+
+극단적인 두 전략을 비교하면 50개씩 배치가 왜 스윗 스팟인지 보인다.
+
+| 전략 | 장점 | 단점 |
+|------|------|------|
+| **1건씩 개별 INSERT** | 메모리 가볍고, 실패 영향 작음 | 네트워크 왕복이 건수만큼 → **매우 느림** |
+| **전체를 한 번에 INSERT** | 네트워크 왕복 1번 → 최대 성능 | 파라미터/메모리 한계, 실패 시 **전체 롤백**, lock 장기 유지 |
+| **50개씩 배치** ⭐ | 왕복 수 급감 (1건씩 대비 최대 50배 빠름), 한계 걱정 없음, 실패 영향 1 배치로 한정 | 살짝 이론적 최대치에는 못 미침 (실용상 무관) |
+
+**1건씩이 너무 느리고, 전체가 너무 위험한 중간 지점** 이 50개씩 배치다.
+
+##### 이유 3 — 운영/가시성
+
+50개마다 처리 진행 로그를 남길 수 있다. 대량 수집에서는 "지금 어디까지 진행됐는지" 모니터링이 중요한데, 한 방에 INSERT 해버리면 "시작" 로그 이후 완료까지 아무 정보 없이 조용해진다. 배치 단위 로그가 있으면 **"50/300 저장 완료", "100/300 저장 완료", ..."** 형태로 실시간 진행도를 볼 수 있다.
+
+또한 **실패 시 영향 범위가 1 배치 (50건)** 로 한정된다. 300건을 한 번에 INSERT 하다가 실패하면 300건 전체가 롤백되지만, 50씩 6번 나누면 실패한 배치만 영향을 받는다.
+
+##### 이유 4 — 왜 하필 "50" 인가
+
+"50" 은 수학적 정답이 아니라 **경험적 관례** 다. 많은 프레임워크가 비슷한 값을 쓴다.
+
+| 프레임워크 | 기본 배치 크기 |
+|---|---|
+| Hibernate `hibernate.jdbc.batch_size` | 15~50 (권장) |
+| Spring Data JPA | 20~50 (권장) |
+| 일반 bulk INSERT 가이드 | 10~100 |
+
+50은 **"너무 작아서 비효율적이지도 않고, 너무 커서 위험하지도 않은"** 안전 지대다. 개발자가 "50 정도면 문제 없겠지" 라는 실전 감각으로 정한 숫자에 가깝고, 상수 하나만 바꾸면 조정 가능하다.
+
+##### 학습 포인트
+
+- **대량 INSERT/UPDATE/DELETE 는 항상 배치 사이즈로 분할** — 이 프로젝트는 모든 대량 처리 지점에서 동일하게 50 을 사용 (일관성 ✓)
+- **배치 사이즈는 DB 드라이버 한계 + 성능 + 관측성의 균형점** — 한 가지 기준으로만 정하지 않음
+- **하드코딩된 50 을 나중에 설정으로 뺄 여지가 있음** — 대량 초기 적재는 100~500 으로 올리고, DB 부하 큰 시간대는 25로 낮추는 식의 튜닝 가능
 
 ### 5.5 ⑤ 조회 (card-api)
 
