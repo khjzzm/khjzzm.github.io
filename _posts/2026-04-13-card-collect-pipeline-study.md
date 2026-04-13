@@ -1404,10 +1404,112 @@ olds 순회하며 자연 키 매칭 시도
 
 > **"temp 를 하나씩 꺼내 olds 와 자연 키로 매칭을 시도하고, 매칭 성공 시에는 세부 비교를 통해 5가지 하위 분류로 나누어 이후 Writer 들이 각자 최소한의 작업만 하도록 미리 분류하는 단계"** 다. 단순한 "같은지 다른지" 가 아니라 **"UPDATE 할지 / 안 할지 / 휴폐업만 보강할지 / 휴폐업까지 재조회할지"** 를 미리 정해두는 **작업 디스패처** 역할.
 
-##### Phase 2 — 삭제 건 추출
+##### Phase 2 — 삭제 건 추출 (단순한 정리 단계)
 
-Phase 1 이 끝난 뒤 olds 에 남아 있는 레코드 = temp 에서 매칭되지 않은 기존 건 = **삭제된 건**.
-전부 `REMOVED` 로 마킹 후 temps 리스트에 합친다 (한 리스트로 통합 처리하려고).
+Phase 1 이 Compare 의 주인공이었다면, Phase 2 는 **짧고 단순한 정리 단계** 다. 다만 이름과 동작이 헷갈리기 쉬워서 정확히 이해하고 가는 게 중요하다.
+
+###### 핵심 — Phase 2 가 다루는 대상은 "중복된 것" 이 아니라 "남은 것"
+
+흔한 오해: "Phase 1 에서 매칭된 olds 를 Phase 2 가 처리한다"
+
+**사실은 그 반대** 다. Phase 1 에서 매칭된 olds 는 이미 `olds.remove(matched)` 로 **소비** 되어 리스트에서 빠져나갔다. 그래서 Phase 1 이 끝난 시점에 `olds` 에 남아 있는 건 **"매칭 실패해서 소비되지 못한 것"**, 즉 **"이번 응답에 대응되는 게 없는 기존 건"** 이다. 비즈니스 의미로는 **"사라진 거래"**.
+
+Phase 2 는 이 잔여물을 **`REMOVED` 로 분류** 한다.
+
+```java
+for (ApprovalHistory removed : integrateQueue.getOlds()) {
+    removed.setCompareResult(ApprovalHistory.CompareResult.REMOVED);
+    integrateQueue.getTemps().add(removed);
+}
+```
+
+###### 두 가지 동작 — 마킹 + 합치기
+
+Phase 2 의 코드는 짧지만 두 가지 동작을 동시에 한다.
+
+1. **REMOVED 플래그 마킹** — `compareResult = REMOVED` 설정. 이건 "Writer 5 가 나중에 DELETE 해줘" 라는 **예약** 표시일 뿐, 이 시점에는 DB 작업 없음.
+2. **temps 리스트에 추가** — `integrateQueue.getTemps().add(removed)` 로 원래 temps 리스트에 합친다. `olds` 에서 빼서 다른 곳으로 옮기는 게 아니라, **복사하듯 temps 에 붙이는** 개념.
+
+원본 `olds` 리스트는 Phase 2 가 끝나도 그대로 있다 (이후에 참조하지 않지만 메모리에는 남음).
+
+###### 왜 temps 리스트에 합치는가 — Writer 인터페이스 통일
+
+"REMOVED 건은 그냥 olds 에 두고 Writer 5 가 olds 를 읽게 하면 되지 않나?" 싶지만, 그러면 이후 Writer 들이 **두 개의 리스트를 각각 다르게 읽어야** 한다.
+
+- Phase 3 는 NEW (temps) 와 REMOVED (olds) 를 각각 따로 조회
+- Writer 5 는 olds 를 순회
+- Writer 6, 7 은 temps 를 순회
+
+이런 구조는 **"어느 리스트에서 뭘 읽어야 하지?"** 를 매번 신경 써야 한다. 모든 Writer 가 단일 리스트 (`temps`) 만 보도록 통일하면 훨씬 깔끔해진다.
+
+실제로 `IntegrateQueue` 클래스에는 다음과 같은 getter 들이 있다.
+
+```java
+integrateQueue.getRemovedApprovalHistories()   // temps 에서 REMOVED 만 필터
+integrateQueue.getUpdatedApprovalHistories()   // temps 에서 UPDATED 만 필터
+integrateQueue.getNewApprovalHistories()       // temps 에서 NEW 만 필터
+```
+
+각 Writer 는 자기가 관심 있는 `compareResult` 를 필터해서 꺼내면 끝. Phase 2 가 REMOVED 건을 `temps` 로 합쳐주는 건 **이 getter 구조가 동작하기 위한 전제 조건** 이다.
+
+###### Day 2 시나리오에서 Phase 2 실제 동작
+
+Phase 1 종료 시점에서 이어서 보면
+
+```
+temps: [A001/NEW(CANCEL), A003/DO_NOTHING, A004/NEW]
+olds:  [A001(APPROVAL), A002(APPROVAL)]     ← Phase 1 에서 소비되고 남은 것
+```
+
+Phase 2 실행:
+
+```
+순회 1 — olds 의 A001(APPROVAL)
+  → compareResult = REMOVED 마킹
+  → temps 에 추가
+
+순회 2 — olds 의 A002(APPROVAL)
+  → compareResult = REMOVED 마킹
+  → temps 에 추가
+```
+
+Phase 2 종료 시점:
+
+```
+temps: [A001/NEW(CANCEL),
+        A003/DO_NOTHING,
+        A004/NEW,
+        A001/REMOVED(APPROVAL),   ← 추가됨
+        A002/REMOVED(APPROVAL)]   ← 추가됨
+olds:  [A001, A002]               ← 원본은 그대로 (읽지 않음)
+```
+
+> ⭐ 눈여겨볼 점: **`A001` 이 `temps` 에 두 번** 들어있다. 하나는 `NEW(CANCEL)`, 또 하나는 `REMOVED(APPROVAL)`. 사실상 **같은 거래인데 승인유형만 바뀐 것** 인데, 현재는 분류상 둘로 잡혀있다. 이 중복을 해결하는 게 **Phase 3 cross-match** 의 역할이다.
+
+###### "REMOVED" 라는 단어의 함정
+
+`REMOVED` 라는 이름이 두 가지 의미를 동시에 가져서 혼동을 준다.
+
+1. **분류명** (CompareResult enum 값) — "이 레코드는 사라진 것으로 판정됨"
+2. **최종 동작** — Writer 5 가 나중에 본 테이블에서 실제 DELETE 할 예정
+
+Phase 2 에서 일어나는 건 **(1) 의 분류** 뿐, 실제 DELETE 는 한참 뒤 Writer 5 에서 일어난다. 그리고 Phase 3 가 **"잠깐, 이 REMOVED 는 사실 같은 거래의 UPDATE 였네"** 하고 재분류해서 DELETE 가 취소될 수도 있다.
+
+```
+Phase 2: compareResult = REMOVED 마킹 (메모리, 예약 상태)
+   ↓
+Phase 3: 일부 REMOVED 가 UPDATED 로 재분류 가능 (메모리)
+   ↓
+Writer 5: 남아있는 REMOVED 건에 대해서만 진짜 DELETE SQL 실행 (DB)
+```
+
+즉 Phase 2 의 REMOVED 는 **"삭제 확정" 이 아니라 "삭제 후보"** 다. 최종 판정은 Phase 3 이후에 나온다.
+
+###### Phase 2 한 줄 요약
+
+> **"Phase 1 의 소비 루프에서 매칭되지 못하고 olds 에 남은 건들에게 `REMOVED` 플래그를 달고 (= 삭제 후보로 예약), 이후 Writer 들이 단일 `temps` 리스트만 순회해도 모든 분류 결과에 접근할 수 있도록 합쳐주는 정리 단계"**
+
+"중복된 것" 이 아니라 **"중복이 없었던 것"** 이 주인공이고, "옮기는" 게 아니라 **"플래그 마킹 + 단일 리스트로 통합"** 이 정확한 동작이다.
 
 ##### Phase 3 — 승인유형 전환 Cross-Match ⭐ (중복 처리의 핵심)
 
@@ -2057,14 +2159,20 @@ collect_queues: DELETE WHERE collect_queue_seq=1001
 #### ④ IntegrateJob — temp 를 본 테이블로 통합
 
 ```sql
--- 1) 큐 락
+-- 1) 큐 락 (Writer 1)
 integrate_queues: UPDATE in_progress=true WHERE integrate_queue_seq=2001
 
--- 2) 비교 대상 읽기
+-- 2) 비교 대상 읽기 (Writer 2) + 0건 방어 체크
 approval_histories_temp: SELECT WHERE collect_queue_seq=1001 → 3건
 approval_histories:      SELECT WHERE card_seq=101           → 0건 (최초라 비어있음)
 
--- 3) 모두 신규 → 본 테이블 INSERT
+-- 3) Compare (Writer 3) — Phase 1/2/3 전부 no-op 수준
+--    olds 가 비어있어서 temps 전체가 NEW 로 분류
+
+-- 4) Writer 4 (CollectStoreTaxType) — 이 시나리오에서는 storeBizId 조건에 따라
+--    NEW 건들의 휴폐업/과세유형을 조회해 채우지만, 본문에서는 단순화를 위해 상세 생략
+
+-- 5) 신규 건 → 본 테이블 INSERT (Writer 7)
 approval_histories:
   + (approval_history_seq=7001, card_seq=101,
      approval_num=A001, amount=15000, approval_type=APPROVAL)
@@ -2073,9 +2181,26 @@ approval_histories:
   + (approval_history_seq=7003, card_seq=101,
      approval_num=A003, amount=22000, approval_type=APPROVAL)
 
--- 4) 정리
-approval_histories_temp: DELETE WHERE collect_queue_seq=1001
+-- 6) 큐 및 temp 정리 (Writer 8, 9)
 integrate_queues:        DELETE WHERE integrate_queue_seq=2001
+approval_histories_temp: DELETE WHERE collect_queue_seq=1001
+
+-- 7) cards.latest_* 건수 보정 (Writer 10) ⭐ 기존 누락분
+--    CollectJob 시점에는 "수집된 총 건수" 만 알 수 있고,
+--    "신규/변경/삭제" 분류는 IntegrateJob 이 끝나야 확정되므로 여기서 뒤늦게 채움
+UPDATE cards
+   SET latest_collect_end_dt = CURRENT_TIMESTAMP,
+       latest_register_count = 3,   -- 전부 신규
+       latest_update_count   = 0,
+       latest_delete_count   = 0
+ WHERE card_seq = 101;
+
+-- 8) collect_logs 건수 보정 (Writer 11) ⭐ 기존 누락분
+UPDATE collect_logs
+   SET register_count = 3,
+       update_count   = 0,
+       delete_count   = 0
+ WHERE collect_log_seq = 9001;  -- CollectJob 이 생성한 이번 수집 로그
 ```
 
 | 테이블 | 액션 | 건수 |
@@ -2085,6 +2210,8 @@ integrate_queues:        DELETE WHERE integrate_queue_seq=2001
 | `approval_histories_removed` | — | 변경 없음 (최초 수집) |
 | `approval_histories_temp` | DELETE | 3행 (청소) |
 | `integrate_queues` | DELETE | 1행 (신호 소비) |
+| `cards` | **UPDATE** | 1행 (`latest_register_count=3` 등 건수 보정) |
+| `collect_logs` | **UPDATE** | 1행 (`register_count=3` 등 건수 보정) |
 
 **Day 1 종료 시점 `approval_histories`**
 
@@ -2093,6 +2220,19 @@ integrate_queues:        DELETE WHERE integrate_queue_seq=2001
 | 7001 | A001 | 15000 | APPROVAL |
 | 7002 | A002 | 8500  | APPROVAL |
 | 7003 | A003 | 22000 | APPROVAL |
+
+**Day 1 종료 시점 `cards`** (card_seq=101 의 `latest_*` 컬럼 상태)
+
+| 필드 | 값 | 설정 주체 |
+|------|-----|----------|
+| `collect_status` | `SUCCESS` | CollectJob Writer 6 |
+| `latest_collect_count` | 3 | CollectJob Writer 6 (외부 API 돌려준 건수) |
+| `latest_register_count` | **3** | IntegrateJob Writer 10 |
+| `latest_update_count` | 0 | IntegrateJob Writer 10 |
+| `latest_delete_count` | 0 | IntegrateJob Writer 10 |
+| `latest_is_permanent_err` | NULL | CollectJob Writer 6 |
+
+즉 **같은 `cards` row 에 두 Job 이 시차를 두고 `latest_*` 를 채워 넣는** 구조. CollectJob 은 "총 건수" 만 알 수 있고, "신규/변경/삭제" 분류는 IntegrateJob 이 끝나야 확정되므로 역할이 분리되어 있다.
 
 ---
 
@@ -2153,14 +2293,39 @@ olds  (기존)     : [A001/APPROVAL, A002/APPROVAL, A003/APPROVAL]
 --   olds:  [A001/APPROVAL(남음), A002/APPROVAL(남음)]  ← A003 은 매칭되어 제거됨
 
 -- 2) Phase 2: olds 에 남은 건을 REMOVED 로 마킹 후 temps 에 합침
---   temps: [A001/NEW, A003/DO_NOTHING, A004/NEW, A001/APPROVAL/REMOVED, A002/APPROVAL/REMOVED]
+--    Phase 1 에서 매칭된 건은 consumption 으로 olds 에서 이미 빠져나감
+--    → olds 에 남아있는 건 = "이번 응답에 대응되는 게 없는 기존 건" = 사라진 것
+--    → REMOVED 플래그 + temps 에 추가 (이후 Writer 들이 단일 리스트 순회 가능하도록)
+--
+--    ⭐ 중요 관찰: 이 시점에 temps 에 A001 이 "두 번" 존재하게 됨
+--      - A001/NEW(CANCEL)       ← Phase 1 에서 분류 (새로 수집된 취소본)
+--      - A001/REMOVED(APPROVAL) ← Phase 2 에서 추가 (기존 승인본이 사라진 것으로 판정)
+--    사실상 "같은 거래의 승인 → 취소 전환" 인데 분류상 두 건으로 잡힌 모순 상태
+--    이 모순을 다음 단계 Phase 3 가 해결한다.
+--
+--    temps: [A001/NEW(CANCEL), A003/DO_NOTHING, A004/NEW,
+--            A001/APPROVAL/REMOVED, A002/APPROVAL/REMOVED]
 
 -- 3) Phase 3: NEW 와 REMOVED 를 cross-match (⭐ 중복 처리의 핵심)
---   A001/NEW(CANCEL) ↔ A001/REMOVED(APPROVAL)
---     → switch(CANCEL) case: "승인 건 찾기 (정상)" 매치!
---     → 기존 approval_history_seq=7001 을 A001/NEW 에 주입
---     → A001/NEW 를 UPDATED 로 변경
---     → A001/REMOVED 는 목록에서 삭제
+--    ─────────────────────────────────────────────────────────
+--    만약 Phase 3 가 없었다면?
+--      Writer 5 가 A001(APPROVAL) 을 approval_history_seq=7001 로 DELETE
+--      Writer 7 이 A001(CANCEL) 을 새 seq(예: 7005) 로 INSERT
+--      → 같은 거래인데 본 테이블 상 seq 가 7001 → 7005 로 바뀜
+--      → 외부 시스템 참조 깨짐, _updated 감사 로그도 연결 끊김
+--      → 이력 연속성 파괴
+--    ─────────────────────────────────────────────────────────
+--
+--    Phase 3 가 이 모순을 해결:
+--    A001/NEW(CANCEL) ↔ A001/REMOVED(APPROVAL)
+--      → switch(CANCEL) case 안에서 "승인 건 찾기 (정상)" 매치!
+--      → 기존 approval_history_seq=7001 을 A001/NEW 에 주입
+--      → A001/NEW 를 UPDATED 로 변경 (DELETE + INSERT 가 아닌 UPDATE 로 수렴)
+--      → A001/REMOVED 는 temps 에서 제거
+--
+--    결과: 같은 거래가 seq 유지한 채 UPDATE 로 처리됨
+--          → 이력 연속성 보존 ✓
+--          → _updated 테이블에 "변경 전 스냅샷" 으로 기록되어 감사 추적 가능 ✓
 
 -- Phase 3 종료 시점 최종 분류
 --   A001 → UPDATED (승인→취소, approval_history_seq=7001 유지!)
@@ -2194,14 +2359,30 @@ approval_histories:
 
 -- [A003] 아무 작업 없음 (데이터 동일)
 
--- [A004] 신규 INSERT
+-- [A004] 신규 INSERT (Writer 7)
 approval_histories:
   + (approval_history_seq=7004, card_seq=101,
      approval_num=A004, amount=4500, approval_type=APPROVAL)
 
--- 정리
-approval_histories_temp: DELETE WHERE collect_queue_seq=1002
+-- 정리 (Writer 8, 9)
 integrate_queues:        DELETE WHERE integrate_queue_seq=2002
+approval_histories_temp: DELETE WHERE collect_queue_seq=1002
+
+-- cards.latest_* 건수 보정 (Writer 10) ⭐
+--   Day 2 에서는 Compare 결과에 따라 세 카운트가 모두 변함
+UPDATE cards
+   SET latest_collect_end_dt = CURRENT_TIMESTAMP,
+       latest_register_count = 1,   -- A004 (신규)
+       latest_update_count   = 1,   -- A001 (Phase 3 cross-match 로 승인→취소 전환)
+       latest_delete_count   = 1    -- A002 (응답에서 사라짐)
+ WHERE card_seq = 101;
+
+-- collect_logs 건수 보정 (Writer 11) ⭐
+UPDATE collect_logs
+   SET register_count = 1,
+       update_count   = 1,
+       delete_count   = 1
+ WHERE collect_log_seq = 10002;  -- Day 2 CollectJob 이 생성한 이번 수집 로그
 ```
 
 | 테이블 | 액션 | 건수 | 어떤 레코드? |
@@ -2213,6 +2394,8 @@ integrate_queues:        DELETE WHERE integrate_queue_seq=2002
 | `approval_histories_removed` | **INSERT** | 1행 | A002 의 삭제 **전** 스냅샷 |
 | `approval_histories_temp` | DELETE | 3행 | 통합 후 청소 |
 | `integrate_queues` | DELETE | 1행 | 신호 소비 |
+| `cards` | **UPDATE** | 1행 | `latest_register_count=1`, `update_count=1`, `delete_count=1` |
+| `collect_logs` | **UPDATE** | 1행 | Day 2 수집 로그의 건수 보정 |
 
 #### Day 2 종료 시점 테이블 상태
 
@@ -2237,6 +2420,28 @@ integrate_queues:        DELETE WHERE integrate_queue_seq=2002
 |---|---|---|---|
 | 8501 | 7002 | **APPROVAL** ← 삭제 전! | 8500 |
 
+**`cards`** (`latest_*` 컬럼 — Day 1 → Day 2 변화)
+
+| 필드 | Day 1 종료 | Day 2 종료 | 변화 의미 |
+|------|-----------|-----------|----------|
+| `collect_status` | SUCCESS | SUCCESS | 정상 유지 |
+| `latest_collect_count` | 3 | 3 | 외부 API 가 이번에도 3건 돌려줌 (A001/A003/A004) |
+| `latest_register_count` | 3 | **1** | A004 신규 1건 |
+| `latest_update_count` | 0 | **1** | A001 승인→취소 (Phase 3 cross-match 결과) |
+| `latest_delete_count` | 0 | **1** | A002 사라짐 |
+
+> 💡 `latest_collect_count` 는 3 그대로인데 register/update/delete 합도 3(1+1+1). 이건 우연이 아니라 **Compare 결과가 `collect_count` 와 정합성을 이루는** 구조. `DO_NOTHING` 인 A003 은 세 카운트 어디에도 안 들어감 — "수집은 됐지만 본 테이블에 아무 변화 없음" 케이스.
+
+**빈 상태 확인** (Day 2 IntegrateJob 종료 직후)
+
+| 테이블 | 상태 |
+|--------|------|
+| `collect_queues` | **비어있음** (Day 2 CollectJob Writer 8 이 DELETE) |
+| `approval_histories_temp` | **비어있음** (IntegrateJob Writer 9 가 DELETE) |
+| `integrate_queues` | **비어있음** (IntegrateJob Writer 8 이 DELETE) |
+
+즉 "수집/통합 파이프라인의 **작업 큐들은 모두 비어 있고**, 결과만 `approval_histories` 계열 테이블과 `cards.latest_*` 에 정제되어 남아 있는" 상태. 다음 EnqueueJob 주기가 오기 전까진 이 3개 큐 테이블이 조용하다.
+
 ### 시나리오에서 뽑은 핵심 관찰
 
 1. **본 테이블은 "현재 상태" 만 유지** — A001 은 CANCEL 로 덮어씌워지고 원래 모습은 사라진다.
@@ -2247,6 +2452,8 @@ integrate_queues:        DELETE WHERE integrate_queue_seq=2002
 6. **신규 건 (A004) 은 `_updated`/`_removed` 에 아무것도 안 남음** — 신규 INSERT 는 감사 대상이 아니라서.
 7. **"사라진 건" 판정은 Phase 2 의 잔여 `olds`** — Phase 1 에서 매칭된 건은 `olds` 에서 제거되므로, 끝까지 남아있는 것만 REMOVED 로 분류된다.
 8. **0건 수집 방어 — 시나리오에 없지만 중요**: 만약 Day 2 외부 API 가 장애로 **빈 배열** 을 응답했다면, Compare 로직은 실행되지 않고 아무 작업 없이 종료된다. (`temps.isEmpty() && !olds.isEmpty()` 가드) 기존 데이터가 전부 `_removed` 로 날아가는 파국을 막는다.
+9. **`cards.latest_*` 건수는 두 Job 이 시차를 두고 채운다** — CollectJob Writer 6 이 `latest_collect_count` 등 "총 건수" 를 세팅하고, IntegrateJob Writer 10 이 끝난 뒤 `latest_register_count / update_count / delete_count` 를 뒤늦게 보정한다. 분산된 정보를 이어 붙이는 패턴.
+10. **큐 테이블들은 작업 종료 후 모두 비어 있다** — `collect_queues`, `approval_histories_temp`, `integrate_queues` 세 큐 테이블은 모두 "작업 대기/진행 중" 신호판 역할이라 완료되면 삭제. 다음 주기가 올 때까지 조용한 상태. 반면 `approval_histories` / `_updated` / `_removed` / `cards.latest_*` 는 **영구 결과 저장소** 로 남는다.
 
 ---
 
