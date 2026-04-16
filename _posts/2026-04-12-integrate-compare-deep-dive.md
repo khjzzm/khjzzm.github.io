@@ -634,3 +634,81 @@ A007/APPROVAL 과 A008/APPROVAL 은 Phase 3 cross-match 로 사라졌다. **DELE
 > Phase 3 에서 같은 거래의 승인유형 전환 (NEW + REMOVED) 을 switch-case 4종 매칭으로 단일 UPDATE 로 병합하는 **작업 디스패처**다.
 
 이 메소드를 이해하고 나면 `approval_histories_updated` 와 `approval_histories_removed` 두 감사 로그 테이블이 왜 존재하는지, 왜 `cards.latest_*` 의 건수 보정이 IntegrateJob 의 마지막 단계에 들어가는지, 왜 외부 스크래핑 시스템이 "한 번 받은 데이터를 본 테이블에 곧바로 쓰지 않고" 굳이 `_temp` 라는 우회로를 거치는지 — 모든 게 한 줄로 이어진다.
+
+---
+
+## 부록. 수집 파이프라인 FAQ — "왜 이렇게까지 해야 하나?"
+
+Compare 로직을 처음 보면 가장 먼저 드는 의문이 있다. **"이걸 왜 이렇게 복잡하게? 그냥 새 데이터를 넣으면 안 되나?"** 이 부록은 그 의문들을 정리한다.
+
+### Q1. 외부 API 가 신규 데이터만 주는 거 아닌가?
+
+아니다. 외부 스크래핑 API(기웅정보통신 KWIC)는 **"특정 기간의 전체 거래 내역"을 통째로** 내려준다. diff 가 아니라 snapshot. 수집 기간 설정은 `application-card.yml` 의
+`collect-days-ago: 28` 로 고정되어 있고 (`BC 법인카드는 최대 1개월까지만 조회 가능하므로, 매일 1번씩만 조회되도록 28일로 설정. 2월 때문`), 매일 **오늘 - 28일 ~ 오늘** 범위를
+통째로 요청한다. 어제 수집한 데이터와 27일분이 겹친다. 그래서 Compare 가 필요하다.
+
+### Q2. 그러면 기존 데이터 DELETE 하고 새 데이터로 덮어쓰면?
+
+안 되는 이유 3가지.
+
+**1) 사용자 메모 소실.** 사용자가 거래 건별로 `memo` 를 직접 입력할 수 있다 (`POST /api/approval-histories/{seq}/memo`). DELETE + INSERT 하면 사용자가
+써둔 메모가 매일 삭제된다. Compare 는 기존 레코드를 그대로 두거나(DO_NOTHING) 필요한 필드만 UPDATE 하므로 memo 가 보존된다.
+
+**2) 변경 이력 추적 불가.** 현재 구조는 변경/삭제 시 이전 상태를 스냅샷으로 보관한다 — 변경 시 `_updated`, 삭제 시 `_removed`. 전체 삭제→재삽입을 하면 **무엇이 바뀌었는지, 무엇이
+사라졌는지** 알 수 없다.
+
+**3) 0건 장애 시 데이터 전소.** 외부 API 가 장애로 빈 응답을 주면 — 덮어쓰기 방식은 DELETE 28일치 → INSERT 0건 → **데이터 전부 사라짐**. Compare 방식은 Writer 2 의
+`temps.isEmpty() && !olds.isEmpty()` 방어 로직으로 아무 것도 안 한다. 이 3줄이 데이터 전소를 막는다.
+
+### Q3. 28일 단위로 조회하면 하루마다 과거 테이블(archive)로 이전되나?
+
+아니다. archive 는 28일 수집 주기와 완전히 독립된 개념이다.
+
+- **수집 (28일)** — "최신 데이터를 가져오는 것". 매일 오늘-28일 ~ 오늘 범위를 외부 API 에서 받아와 temp → Compare → 본 테이블.
+- **archive (730일)** — "오래된 데이터를 별도 보관하는 것". ArchiveJob 이 배치로 실행되어 `days-ago: 730` (2년) 초과 데이터를
+  `archive.approval_histories_YYYY` 연도별 테이블로 이동 후 본 테이블에서 DELETE.
+
+본 테이블에는 최근 ~2년치가 쌓여 있고, 사용자 조회·메모 등 모든 기능이 여기서 동작한다.
+
+### Q4. 최초 카드 등록 후 다음 수집은 언제?
+
+등록 시간과 무관하다.
+
+```
+카드 A 등록 (오전 10시)
+  → registerCard() 에서 collect() 직접 호출 (EnqueueJob 안 거침)
+  → collect_queues INSERT (startDate=today-28, endDate=today)
+  → CollectJob 이 처리 → IntegrateJob 이 처리
+  → cards.collect_status = 'SUCCESS'
+        │
+        ▼
+다음날 새벽 4시 ── EnqueueJob cron 실행
+  → collect_status = 'SUCCESS' 인 모든 카드 SELECT
+  → 카드 A 포함, collect_queues 에 다시 INSERT
+  → CollectJob → IntegrateJob (반복)
+```
+
+EnqueueJob 은 Quartz cron `'0 0 4 * * ?'` 으로 **매일 새벽 4시** 고정 실행. 카드별 개별 타이머는 없다. cron 주기 = 수집 주기.
+
+### Q5. 3개 Job 은 어떻게 맞물려 돌아가나?
+
+운영 설정 기준:
+
+```
+새벽 4시  ─── EnqueueJob (chunk=50)
+               SUCCESS 카드 전부 SELECT → collect_queues 일괄 INSERT
+
+이후      ─── CollectJob (10초마다, 스레드 10개)
+               collect_queues 에서 꺼내서 외부 API 호출
+               카드 1장씩, 10개 스레드 병렬 처리
+               FOR UPDATE SKIP LOCKED 로 스레드끼리 안 겹침
+
+이후      ─── IntegrateJob (10초마다, 스레드 5개)
+               integrate_queues 에서 꺼내서 Compare → 본 테이블 반영
+```
+
+카드사별로 한 번에 조회 가능한 기간이 다르므로 CollectJob 이 자동 분할한다 — 신한 법인은 7일씩 4번, 우리 법인은 5일씩 6번, BC 법인은 28일 한 번에. `period-partition-days`
+yml 설정으로 카드사별 조정.
+
+CollectJob 이 10초마다 실행되는데 스레드 10개가 다 차 있으면? `FOR UPDATE SKIP LOCKED` 덕분에 이미 잡힌 카드는 건너뛰고 안 잡힌 카드만 가져간다.
+`throttleLimit = max-pool-size(10)` 으로 동시 스레드 최대 10개 제한. 10개 다 바쁘면 다음 cron 회차에서 처리.
