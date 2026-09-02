@@ -10,6 +10,9 @@ favicon: "logo.png"
 lang: ko
 timezone: Asia/Seoul
 
+# 미래 날짜 포스트도 빌드/목록에 포함 (기본값 false 라 제외됨)
+future: true
+
 remote_theme: riggraz/no-style-please
 theme_config:
   appearance: "auto"
