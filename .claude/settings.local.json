@@ -3,7 +3,8 @@
     "allow": [
       "Bash(cat:*)",
       "Bash(grep:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "WebSearch"
     ]
   }
 }
