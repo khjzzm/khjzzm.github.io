@@ -59,6 +59,9 @@ tags: [tag1, tag2]
 ### 카테고리 (선택적)
 - `commit`: 커밋된 시간들
 - `devlog`: 컴파일되지 않는 이야기
+- `nihongo`: 일본어 공부 기록
+
+카테고리 포스트는 `_posts/<category>/` 하위에 두고 front matter에도 `category`를 명시합니다.
 
 ### 태그 체계 (정형화됨)
 | 태그 | 용도 |

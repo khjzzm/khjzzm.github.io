@@ -21,3 +21,11 @@ entries:
       show_more: true
       show_more_text: See more Devlog Beyond...
       show_more_url: devlog-archive.html
+
+  - title: 일본어 공부 기록
+    post_list:
+      category: nihongo
+      limit: 5
+      show_more: true
+      show_more_text: See more Nihongo...
+      show_more_url: nihongo-archive.html
